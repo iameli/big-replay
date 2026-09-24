@@ -51,7 +51,7 @@ internal static class Program
 
         var entries = layout.Classes.Select(kv => (kv.Key, kv.Value)).ToArray();
         Console.WriteLine("waiting for static blocks (klass discovery, classes initialize in-world)...");
-        for (int attempt = 0; attempt < 300; attempt++)
+        for (int attempt = 0; attempt < 600; attempt++)
         {
             int done = entries.Count(e => e.Value.Resolved);
             foreach (var (_, cls) in entries)
@@ -124,6 +124,7 @@ internal static class Program
     private static int Record(string manifestPath, string[] args)
     {
         double rate = 10;
+        double duration = 0; // 0 = until Ctrl+C
         string? outPath = null;
         for (int i = 0; i < args.Length; i++)
         {
@@ -131,6 +132,9 @@ internal static class Program
             {
                 case "-r" or "--rate" when i + 1 < args.Length:
                     rate = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+                    break;
+                case "-d" or "--duration" when i + 1 < args.Length:
+                    duration = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
                     break;
                 case "-o" or "--out" when i + 1 < args.Length:
                     outPath = args[++i];
@@ -156,6 +160,7 @@ internal static class Program
 
         using var file = File.Create(outPath);
         var writer = new ReplayWriter(file);
+
         var events = new List<ReplayEvent>();
 
         var clock = Stopwatch.StartNew();
@@ -172,7 +177,7 @@ internal static class Program
             e.Cancel = true;
             _stop = true;
         };
-        while (!_stop)
+        while (!_stop && (duration <= 0 || clock.Elapsed.TotalSeconds < duration))
         {
             double t = clock.Elapsed.TotalSeconds;
             if (t < next)
@@ -196,7 +201,7 @@ internal static class Program
 
                 var (monuments, landmarks) = reader.ReadHomes();
 
-                if (!headerWritten && active && players.Count > 0)
+                if (!headerWritten && players.Count > 0)
                 {
                     writer.WriteHeader(new ReplayHeader
                     {

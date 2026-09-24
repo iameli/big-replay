@@ -5,7 +5,8 @@ namespace GameAccess;
 /// lazily. Reliable pure-read route: (1) locate the class's name string in the metadata image
 /// (near the type handle), (2) scan memory for qwords pointing at it, (3) validate the candidate
 /// as a klass (self pointer at +0x78, non-null static-fields block at +0xB8).
-/// Scanning is windowed around the first resolved klass; widens to a full pass on a miss.
+/// Windowed scanning around the first resolved klass; each class gets ONE full-space widen
+/// (recording never hinges on classes that are simply never created in the session).
 /// </summary>
 public sealed class ClassDiscoveryContext
 {
@@ -22,6 +23,7 @@ public sealed class ClassDiscoveryContext
     {
         _game = game;
         _typesTable = game.GameAssemblyBase + (long)manifest.TypesTableRva;
+        MemoryRegions.Init(game.Handle);
     }
 
     /// <summary>Resolve the static block of one class. Pure reads; throttled.</summary>
@@ -52,9 +54,10 @@ public sealed class ClassDiscoveryContext
                 long lo = _windowCenter.Value - 0x40_00_00;
                 long hi = _windowCenter.Value + 0x40_00_00;
                 klass = ScanRefs(lo, hi, strings);
-                if (klass == null)
+                if (klass == null && !cls.FullScanDone)
                 {
-                    klass = ScanRefs(0x1000, 0x7FFFFFFFFFFF, strings); // full widen
+                    cls.FullScanDone = true;
+                    klass = ScanRefs(0x1000, 0x7FFFFFFFFFFF, strings); // one full widen per class
                     if (klass != null)
                     {
                         _windowCenter = klass;
@@ -63,10 +66,14 @@ public sealed class ClassDiscoveryContext
             }
             else
             {
-                // first class: module region first (fast), then full space
+                // first class: module region first (fast), then one full pass
                 long modBase = _game.GameAssemblyBase;
-                klass = ScanRefs(modBase, modBase + _game.GameAssemblySize, strings)
-                        ?? ScanRefs(0x1000, 0x7FFFFFFFFFFF, strings);
+                klass = ScanRefs(modBase, modBase + _game.GameAssemblySize, strings);
+                if (klass == null)
+                {
+                    cls.FullScanDone = true;
+                    klass = ScanRefs(0x1000, 0x7FFFFFFFFFFF, strings);
+                }
                 if (klass != null)
                 {
                     _windowCenter = klass;
@@ -96,7 +103,7 @@ public sealed class ClassDiscoveryContext
         var needle = System.Text.Encoding.ASCII.GetBytes(className + "\0");
         var hits = new List<long>();
         var chunk = new byte[Chunk];
-        const long range = 0x20_0000; // ±32 MB: the metadata image
+        const long range = 0x200_0000; // ±32 MB: the metadata image
         for (long d = -range; d < range; d += Chunk)
         {
             long baseAddr = handle + d;
@@ -112,6 +119,10 @@ public sealed class ClassDiscoveryContext
             while (p >= 0)
             {
                 hits.Add(baseAddr + p);
+                if (hits.Count >= 3)
+                {
+                    return hits.GetRange(0, 3); // a few copies suffice; keeps the ref scan fast
+                }
                 p = chunk.AsSpan(p + 1).IndexOf(needle);
             }
         }
@@ -121,13 +132,22 @@ public sealed class ClassDiscoveryContext
     private long? ScanRefs(long lo, long hi, List<long> strings)
     {
         byte[][] needles = strings.Select(s => BitConverter.GetBytes(s)).ToArray();
-        long addr = lo & ~0xFFFFL;
-        while (addr < hi)
+        foreach (var region in MemoryRegions.Readable(lo, hi))
         {
-            int want = (int)Math.Min(Chunk, hi - addr);
-            var buf = new byte[want];
-            if (_game.TryReadBytes(addr, buf))
+            long addr = region.Start;
+            long end = region.Start + region.Size;
+            var buf = new byte[Math.Min(Chunk, region.Size)];
+            while (addr < end)
             {
+                int want = (int)Math.Min(Chunk, end - addr);
+                if (want != buf.Length)
+                {
+                    buf = new byte[want];
+                }
+                if (!_game.TryReadBytes(addr, buf))
+                {
+                    break;
+                }
                 foreach (var needle in needles)
                 {
                     int off = 0;
@@ -152,8 +172,8 @@ public sealed class ClassDiscoveryContext
                         off += p + 1;
                     }
                 }
+                addr += Chunk;
             }
-            addr += Chunk;
         }
         return null;
     }

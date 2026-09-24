@@ -18,10 +18,10 @@ public sealed class ClassLayout
     public readonly record struct Field(int Offset, bool IsStatic);
 
     public IReadOnlyList<string> StaticFieldNames => StaticOffsets.Keys.ToArray();
-
     public ulong StaticBlock { get; private set; }
     public bool Resolved => StaticBlock != 0;
     public long LastDiscoveryAttempt { get; set; }
+    public bool FullScanDone { get; set; }
 
     public void BindStaticBlock(ulong block) => StaticBlock = block;
 
