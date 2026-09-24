@@ -23,12 +23,13 @@ internal static class Program
         try
         {
             string mode = args.Length > 0 ? args[0] : "probe";
-            string manifestPath = args.Length > 1 ? args[1] : "manifest.json";
+            string manifestPath = args.Length > 1 && !args[1].StartsWith('-') ? args[1] : "manifest.json";
+            string[] rest = manifestPath == "manifest.json" && args.Length > 1 ? args.Skip(1).ToArray() : args.Skip(2).ToArray();
             return mode switch
             {
                 "probe" => Probe(manifestPath),
                 "probe-ro" => ProbeReadOnly(manifestPath),
-                "record" => Record(manifestPath, args.Skip(2).ToArray()),
+                "record" => Record(manifestPath, rest),
                 _ => throw new ArgumentException($"unknown mode '{mode}' (use 'probe', 'probe-ro' or 'record')"),
             };
         }
