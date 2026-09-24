@@ -15,6 +15,7 @@
   "Classes": {
     "PlayerCharacter": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5498,
       "TypeDefIndex": 5498,
       "IsValueType": false,
@@ -49,10 +50,18 @@
           "Offset": 491,
           "IsStatic": false
         }
+      ],
+      "Statics": [
+        {
+          "Name": "allPlayerCharacters",
+          "Size": 8,
+          "Offset": 0
+        }
       ]
     },
     "PlayerNetworking": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5513,
       "TypeDefIndex": 5513,
       "IsValueType": false,
@@ -62,10 +71,18 @@
           "Offset": 336,
           "IsStatic": false
         }
+      ],
+      "Statics": [
+        {
+          "Name": "playerCount",
+          "Size": 4,
+          "Offset": 0
+        }
       ]
     },
     "PropHome": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5585,
       "TypeDefIndex": 5585,
       "IsValueType": false,
@@ -100,10 +117,23 @@
           "Offset": 48,
           "IsStatic": false
         }
+      ],
+      "Statics": [
+        {
+          "Name": "onAnyChangeServer",
+          "Size": 8,
+          "Offset": 0
+        },
+        {
+          "Name": "allPropHomes",
+          "Size": 8,
+          "Offset": 8
+        }
       ]
     },
     "Prop": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5578,
       "TypeDefIndex": 5578,
       "IsValueType": false,
@@ -123,10 +153,18 @@
           "Offset": 704,
           "IsStatic": false
         }
+      ],
+      "Statics": [
+        {
+          "Name": "allProps",
+          "Size": 8,
+          "Offset": 0
+        }
       ]
     },
     "Corpse": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5034,
       "TypeDefIndex": 5034,
       "IsValueType": false,
@@ -136,10 +174,18 @@
           "Offset": 0,
           "IsStatic": true
         }
+      ],
+      "Statics": [
+        {
+          "Name": "allCorpses",
+          "Size": 8,
+          "Offset": 0
+        }
       ]
     },
     "PlayerSleeper": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5484,
       "TypeDefIndex": 5484,
       "IsValueType": false,
@@ -149,10 +195,12 @@
           "Offset": 16,
           "IsStatic": false
         }
-      ]
+      ],
+      "Statics": []
     },
     "PeckSwitch": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5355,
       "TypeDefIndex": 5355,
       "IsValueType": false,
@@ -162,10 +210,12 @@
           "Offset": 32,
           "IsStatic": false
         }
-      ]
+      ],
+      "Statics": []
     },
     "TrackedPeckState": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5361,
       "TypeDefIndex": 5361,
       "IsValueType": false,
@@ -175,10 +225,18 @@
           "Offset": 56,
           "IsStatic": false
         }
+      ],
+      "Statics": [
+        {
+          "Name": "eventName",
+          "Size": 8,
+          "Offset": 0
+        }
       ]
     },
     "PeckContext": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5340,
       "TypeDefIndex": 5340,
       "IsValueType": true,
@@ -203,10 +261,12 @@
           "Offset": 20,
           "IsStatic": false
         }
-      ]
+      ],
+      "Statics": []
     },
     "MainMenuManager": {
       "Image": "Assembly-CSharp.dll",
+      "Namespace": "",
       "TypeIndex": 5311,
       "TypeDefIndex": 5311,
       "IsValueType": false,
@@ -216,10 +276,23 @@
           "Offset": 8,
           "IsStatic": true
         }
+      ],
+      "Statics": [
+        {
+          "Name": "showErrorMessageEvent",
+          "Size": 8,
+          "Offset": 0
+        },
+        {
+          "Name": "entryMode",
+          "Size": 4,
+          "Offset": 8
+        }
       ]
     },
     "NetworkIdentity": {
       "Image": "Mirror.dll",
+      "Namespace": "Mirror",
       "TypeIndex": 18326,
       "TypeDefIndex": 18326,
       "IsValueType": false,
@@ -234,10 +307,38 @@
           "Offset": 34,
           "IsStatic": false
         }
+      ],
+      "Statics": [
+        {
+          "Name": "MaxNetworkBehaviours",
+          "Size": 4,
+          "Offset": 0
+        },
+        {
+          "Name": "sceneIds",
+          "Size": 8,
+          "Offset": 8
+        },
+        {
+          "Name": "nextNetworkId",
+          "Size": 4,
+          "Offset": 16
+        },
+        {
+          "Name": "clientAuthorityCallback",
+          "Size": 8,
+          "Offset": 24
+        },
+        {
+          "Name": "previousLocalPlayer",
+          "Size": 8,
+          "Offset": 32
+        }
       ]
     },
     "NetworkBehaviour": {
       "Image": "Mirror.dll",
+      "Namespace": "Mirror",
       "TypeIndex": 18308,
       "TypeDefIndex": 18308,
       "IsValueType": false,
@@ -247,10 +348,12 @@
           "Offset": 64,
           "IsStatic": false
         }
-      ]
+      ],
+      "Statics": []
     },
     "NetworkClient": {
       "Image": "Mirror.dll",
+      "Namespace": "Mirror",
       "TypeIndex": 18317,
       "TypeDefIndex": 18317,
       "IsValueType": false,
@@ -260,10 +363,148 @@
           "Offset": 48,
           "IsStatic": true
         }
+      ],
+      "Statics": [
+        {
+          "Name": "lastSendTime",
+          "Size": 8,
+          "Offset": 0
+        },
+        {
+          "Name": "handlers",
+          "Size": 8,
+          "Offset": 8
+        },
+        {
+          "Name": "spawned",
+          "Size": 8,
+          "Offset": 16
+        },
+        {
+          "Name": "\u003Cconnection\u003Ek__BackingField",
+          "Size": 8,
+          "Offset": 24
+        },
+        {
+          "Name": "ready",
+          "Size": 1,
+          "Offset": 32
+        },
+        {
+          "Name": "\u003ClocalPlayer\u003Ek__BackingField",
+          "Size": 8,
+          "Offset": 40
+        },
+        {
+          "Name": "connectState",
+          "Size": 4,
+          "Offset": 48
+        },
+        {
+          "Name": "OnConnectedEvent",
+          "Size": 8,
+          "Offset": 56
+        },
+        {
+          "Name": "OnDisconnectedEvent",
+          "Size": 8,
+          "Offset": 64
+        },
+        {
+          "Name": "OnErrorEvent",
+          "Size": 8,
+          "Offset": 72
+        },
+        {
+          "Name": "prefabs",
+          "Size": 8,
+          "Offset": 80
+        },
+        {
+          "Name": "spawnHandlers",
+          "Size": 8,
+          "Offset": 88
+        },
+        {
+          "Name": "unspawnHandlers",
+          "Size": 8,
+          "Offset": 96
+        },
+        {
+          "Name": "isSpawnFinished",
+          "Size": 1,
+          "Offset": 104
+        },
+        {
+          "Name": "spawnableObjects",
+          "Size": 8,
+          "Offset": 112
+        },
+        {
+          "Name": "unbatcher",
+          "Size": 8,
+          "Offset": 120
+        },
+        {
+          "Name": "aoi",
+          "Size": 8,
+          "Offset": 128
+        },
+        {
+          "Name": "isLoadingScene",
+          "Size": 1,
+          "Offset": 136
+        },
+        {
+          "Name": "snapshotSettings",
+          "Size": 8,
+          "Offset": 144
+        },
+        {
+          "Name": "snapshots",
+          "Size": 8,
+          "Offset": 152
+        },
+        {
+          "Name": "localTimeline",
+          "Size": 8,
+          "Offset": 160
+        },
+        {
+          "Name": "localTimescale",
+          "Size": 8,
+          "Offset": 168
+        },
+        {
+          "Name": "driftEma",
+          "Size": 8,
+          "Offset": 176
+        },
+        {
+          "Name": "dynamicAdjustment",
+          "Size": 1,
+          "Offset": 184
+        },
+        {
+          "Name": "dynamicAdjustmentTolerance",
+          "Size": 4,
+          "Offset": 188
+        },
+        {
+          "Name": "deliveryTimeEmaDuration",
+          "Size": 4,
+          "Offset": 192
+        },
+        {
+          "Name": "deliveryTimeEma",
+          "Size": 8,
+          "Offset": 200
+        }
       ]
     },
     "NetworkServer": {
       "Image": "Mirror.dll",
+      "Namespace": "Mirror",
       "TypeIndex": 18349,
       "TypeDefIndex": 18349,
       "IsValueType": false,
@@ -272,6 +513,118 @@
           "Name": "\u003Cactive\u003Ek__BackingField",
           "Offset": 57,
           "IsStatic": true
+        }
+      ],
+      "Statics": [
+        {
+          "Name": "initialized",
+          "Size": 1,
+          "Offset": 0
+        },
+        {
+          "Name": "maxConnections",
+          "Size": 4,
+          "Offset": 4
+        },
+        {
+          "Name": "tickRate",
+          "Size": 4,
+          "Offset": 8
+        },
+        {
+          "Name": "lastSendTime",
+          "Size": 8,
+          "Offset": 16
+        },
+        {
+          "Name": "\u003ClocalConnection\u003Ek__BackingField",
+          "Size": 8,
+          "Offset": 24
+        },
+        {
+          "Name": "connections",
+          "Size": 8,
+          "Offset": 32
+        },
+        {
+          "Name": "handlers",
+          "Size": 8,
+          "Offset": 40
+        },
+        {
+          "Name": "spawned",
+          "Size": 8,
+          "Offset": 48
+        },
+        {
+          "Name": "dontListen",
+          "Size": 1,
+          "Offset": 56
+        },
+        {
+          "Name": "\u003Cactive\u003Ek__BackingField",
+          "Size": 1,
+          "Offset": 57
+        },
+        {
+          "Name": "isLoadingScene",
+          "Size": 1,
+          "Offset": 58
+        },
+        {
+          "Name": "aoi",
+          "Size": 8,
+          "Offset": 64
+        },
+        {
+          "Name": "OnConnectedEvent",
+          "Size": 8,
+          "Offset": 72
+        },
+        {
+          "Name": "OnDisconnectedEvent",
+          "Size": 8,
+          "Offset": 80
+        },
+        {
+          "Name": "OnErrorEvent",
+          "Size": 8,
+          "Offset": 88
+        },
+        {
+          "Name": "actualTickRate",
+          "Size": 4,
+          "Offset": 96
+        },
+        {
+          "Name": "actualTickRateStart",
+          "Size": 8,
+          "Offset": 104
+        },
+        {
+          "Name": "actualTickRateCounter",
+          "Size": 4,
+          "Offset": 112
+        },
+        {
+          "Name": "earlyUpdateDuration",
+          "Size": 8,
+          "Offset": 120
+        },
+        {
+          "Name": "lateUpdateDuration",
+          "Size": 8,
+          "Offset": 128
+        },
+        {
+          "Name": "fullUpdateDuration",
+          "Size": 8,
+          "Offset": 136
+        },
+        {
+          "Name": "connectionsCopy",
+          "Size": 8,
+          "Offset": 144
         }
       ]
     }

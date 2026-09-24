@@ -3,13 +3,14 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AssetRipper.Primitives;
 using LibCpp2IL;
+using LibCpp2IL.BinaryStructures;
 using LibCpp2IL.Metadata;
 
 namespace BigWalkReplay.ManifestGen;
 
 /// <summary>
-/// Generates the per-build manifest the recorder needs: instance field offsets and per-class
-/// identity (namespace, type index, static-field list) plus the binary table RVAs.
+/// Generates the per-build manifest the recorder needs: instance field offsets, per-class identity
+/// (namespace, type index), ordered static-field lists with aligned block offsets, and binary RVAs.
 ///
 ///   dotnet run --project src/BigWalkReplay.ManifestGen -- <gameFolder> [out.json]
 /// </summary>
@@ -18,20 +19,20 @@ internal static class Program
     // (image, className, field names) — parallel to the recorder's GameLayout.
     private static readonly (string Image, string Class, string[] Fields)[] Wanted =
     [
-        ("Assembly-CSharp", "PlayerCharacter", ["allPlayerCharacters", "mover", "playerNetworking", "registry", "sleeper", "bypassUpdate"]),
-        ("Assembly-CSharp", "PlayerNetworking", ["isPending"]),
-        ("Assembly-CSharp", "PropHome", ["allPropHomes", "onPin", "pinGroup", "pinnedProp", "saveableHomeName", "parentCharacter"]),
-        ("Assembly-CSharp", "Prop", ["allProps", "saveablePropName", "exclusiveHolder"]),
-        ("Assembly-CSharp", "Corpse", ["allCorpses"]),
-        ("Assembly-CSharp", "PlayerSleeper", ["timeTilSleep"]),
-        ("Assembly-CSharp", "PeckSwitch", ["trackedStateSystem"]),
-        ("Assembly-CSharp", "TrackedPeckState", ["currentPeckContext"]),
-        ("Assembly-CSharp", "PeckContext", ["playerIdentity", "propIdentity", "compressedState", "actionNumber"]),
-        ("Assembly-CSharp", "MainMenuManager", ["entryMode"]),
-        ("Mirror", "NetworkIdentity", ["<netId>k__BackingField", "<isLocalPlayer>k__BackingField"]),
-        ("Mirror", "NetworkBehaviour", ["<netIdentity>k__BackingField"]),
-        ("Mirror", "NetworkClient", ["connectState"]),
-        ("Mirror", "NetworkServer", ["<active>k__BackingField"]),
+        ("Assembly-CSharp.dll", "PlayerCharacter", ["allPlayerCharacters", "mover", "playerNetworking", "registry", "sleeper", "bypassUpdate"]),
+        ("Assembly-CSharp.dll", "PlayerNetworking", ["isPending"]),
+        ("Assembly-CSharp.dll", "PropHome", ["allPropHomes", "onPin", "pinGroup", "pinnedProp", "saveableHomeName", "parentCharacter"]),
+        ("Assembly-CSharp.dll", "Prop", ["allProps", "saveablePropName", "exclusiveHolder"]),
+        ("Assembly-CSharp.dll", "Corpse", ["allCorpses"]),
+        ("Assembly-CSharp.dll", "PlayerSleeper", ["timeTilSleep"]),
+        ("Assembly-CSharp.dll", "PeckSwitch", ["trackedStateSystem"]),
+        ("Assembly-CSharp.dll", "TrackedPeckState", ["currentPeckContext"]),
+        ("Assembly-CSharp.dll", "PeckContext", ["playerIdentity", "propIdentity", "compressedState", "actionNumber"]),
+        ("Assembly-CSharp.dll", "MainMenuManager", ["entryMode"]),
+        ("Mirror.dll", "NetworkIdentity", ["<netId>k__BackingField", "<isLocalPlayer>k__BackingField"]),
+        ("Mirror.dll", "NetworkBehaviour", ["<netIdentity>k__BackingField"]),
+        ("Mirror.dll", "NetworkClient", ["connectState"]),
+        ("Mirror.dll", "NetworkServer", ["<active>k__BackingField"]),
     ];
 
     private const string GameVersion = "1.5.1 2608271531";
@@ -129,6 +130,21 @@ internal static class Program
                 fieldInfos.Add(new FieldEntry { Name = wanted, Offset = fi.FieldOffset, IsStatic = isStatic });
             }
 
+            var allStatics = fields
+                .Where(fi => fi.Attributes.HasFlag(FieldAttributes.Static))
+                .Select(fi => new StaticEntry { Name = fi.Field.Name, Size = SizeOf(fi.Field.RawFieldType!, assemblyBytes, typeDefSizes) })
+                .ToList();
+
+            // aligned static-block layout: declaration order, natural alignment by size
+            int cur = 0;
+            foreach (var s in allStatics)
+            {
+                int align = s.Size switch { >= 8 => 8, >= 4 => 4, >= 2 => 2, _ => 1 };
+                cur = (cur + align - 1) / align * align;
+                s.Offset = cur;
+                cur += s.Size;
+            }
+
             var entry = new ClassEntry
             {
                 Image = imageName,
@@ -137,6 +153,7 @@ internal static class Program
                 TypeDefIndex = Array.IndexOf(metadata.typeDefs, td),
                 IsValueType = td.IsValueType,
                 Fields = fieldInfos,
+                Statics = allStatics,
             };
             manifest.Classes[className] = entry;
             Console.WriteLine($"  {className}: typeIndex={entry.TypeIndex} ns='{entry.Namespace}' vt={entry.IsValueType}");
@@ -144,11 +161,57 @@ internal static class Program
             {
                 Console.WriteLine($"    {(f.IsStatic ? "static " : "field  ")} {f.Name} @ 0x{f.Offset:X}");
             }
+            if (allStatics.Count > 0)
+            {
+                Console.WriteLine($"    statics: {string.Join(", ", allStatics.Select(s => $"{s.Name}({s.Size}B@0x{s.Offset:X})"))}");
+            }
         }
 
         File.WriteAllText(outPath, JsonSerializer.Serialize(manifest, Json));
         Console.WriteLine($"\nwrote {outPath}");
         return 0;
+    }
+
+    private static int SizeOf(Il2CppType t, byte[] assemblyBytes, ulong typeDefSizesRva)
+    {
+        var type = t.Type;
+        if (type == Il2CppTypeEnum.IL2CPP_TYPE_VALUETYPE)
+        {
+            // enum: the value__ storage field holds the primitive; structs fall back to the name map
+            var td2 = t.CoerceToUnderlyingTypeDefinition();
+            var valueField = td2.FieldInfos?.FirstOrDefault(f => f.Field.Name == "value__");
+            if (valueField?.Field.RawFieldType is { } vf)
+            {
+                return SizeOf(vf, assemblyBytes, typeDefSizesRva);
+            }
+            string name = td2.Name ?? "";
+            return name switch
+            {
+                "System.Boolean" => 1,
+                "System.Char" => 2,
+                "System.Byte" or "System.SByte" => 1,
+                "System.Int16" or "System.UInt16" => 2,
+                "System.Int32" or "System.UInt32" or "System.Single" => 4,
+                "System.Int64" or "System.UInt64" or "System.Double" or "System.IntPtr" or "System.UIntPtr" => 8,
+                _ => 8, // structs / unknown value types
+            };
+        }
+        if (type == Il2CppTypeEnum.IL2CPP_TYPE_GENERICINST)
+        {
+            return 8;
+        }
+        return type switch
+        {
+            Il2CppTypeEnum.IL2CPP_TYPE_BOOLEAN => 1,
+            Il2CppTypeEnum.IL2CPP_TYPE_CHAR => 2,
+            Il2CppTypeEnum.IL2CPP_TYPE_I1 or Il2CppTypeEnum.IL2CPP_TYPE_U1 => 1,
+            Il2CppTypeEnum.IL2CPP_TYPE_I2 or Il2CppTypeEnum.IL2CPP_TYPE_U2 => 2,
+            Il2CppTypeEnum.IL2CPP_TYPE_I4 or Il2CppTypeEnum.IL2CPP_TYPE_U4
+                or Il2CppTypeEnum.IL2CPP_TYPE_R4 => 4,
+            Il2CppTypeEnum.IL2CPP_TYPE_I8 or Il2CppTypeEnum.IL2CPP_TYPE_U8
+                or Il2CppTypeEnum.IL2CPP_TYPE_R8 => 8,
+            _ => 8, // references / pointers / objects / arrays
+        };
     }
 
     private static ulong ReadPtr(byte[] b, ulong rva) => BitConverter.ToUInt64(b, (int)RvaToOffset(b, rva));
@@ -222,6 +285,7 @@ internal static class Program
         public int TypeDefIndex { get; set; }
         public bool IsValueType { get; set; }
         public List<FieldEntry> Fields { get; set; } = new();
+        public List<StaticEntry> Statics { get; set; } = new();
     }
 
     public sealed class FieldEntry
@@ -229,5 +293,12 @@ internal static class Program
         public string Name { get; set; } = "";
         public int Offset { get; set; }
         public bool IsStatic { get; set; }
+    }
+
+    public sealed class StaticEntry
+    {
+        public string Name { get; set; } = "";
+        public int Size { get; set; }
+        public int Offset { get; set; }
     }
 }
