@@ -50,17 +50,21 @@ internal static class Program
         Console.WriteLine($"manifest OK: build {layout.Manifest.BuildId} ({layout.Manifest.GameVersion})");
 
         var entries = layout.Classes.Select(kv => (kv.Key, kv.Value)).ToArray();
-        Console.WriteLine("waiting for static blocks (classes initialize in-world)...");
-        for (int attempt = 0; attempt < 60; attempt++)
+        Console.WriteLine("waiting for static blocks (klass discovery, classes initialize in-world)...");
+        for (int attempt = 0; attempt < 300; attempt++)
         {
             int done = entries.Count(e => e.Value.Resolved);
             foreach (var (_, cls) in entries)
             {
-                cls.TryResolveStaticBlock();
+                layout.TryResolveStatics(cls);
             }
             if (entries.All(e => e.Value.Resolved))
             {
                 break;
+            }
+            if (attempt % 10 == 9)
+            {
+                Console.WriteLine($"  resolved {entries.Count(e => e.Value.Resolved)}/{entries.Length}…");
             }
             Thread.Sleep(500);
         }

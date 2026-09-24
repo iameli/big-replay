@@ -32,7 +32,7 @@ public sealed class GameStateReader
     private long StaticSlot(string cls, string field)
     {
         var c = C(cls);
-        c.TryResolveStaticBlock();
+        _l.TryResolveStatics(c);
         return c.StaticSlot(field);
     }
 
