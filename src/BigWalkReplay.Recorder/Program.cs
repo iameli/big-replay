@@ -130,11 +130,13 @@ internal static class Program
                     break;
                 case "-o" or "--out" when i + 1 < args.Length:
                     outPath = args[++i];
-                case _ when args[i].EndsWith(".json", StringComparison.OrdinalIgnoreCase):
-                    break; // positional manifest (already resolved in Main)
+                    break;
                 default:
+                    if (args[i].EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        break; // positional manifest (already resolved in Main)
+                    }
                     throw new ArgumentException($"unknown option '{args[i]}'");
-            }
         }
         rate = Math.Clamp(rate, 1, 60);
         outPath ??= $"bigwalk-replay-{DateTime.UtcNow:yyyyMMdd-HHmmss}.replay.json.gz";
