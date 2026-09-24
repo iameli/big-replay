@@ -140,7 +140,7 @@ internal static class Program
             }
         }
         rate = Math.Clamp(rate, 1, 60);
-        rate = Math.Clamp(rate, 1, 60);
+
         outPath ??= $"bigwalk-replay-{DateTime.UtcNow:yyyyMMdd-HHmmss}.replay.json.gz";
 
         using var game = GameProcess.Attach();
