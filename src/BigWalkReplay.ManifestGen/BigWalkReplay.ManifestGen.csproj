@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BigWalkReplay.ManifestGen</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- vendored LibCpp2IL is MIT (see LibCpp2IL/LICENSE-MIT); its code is not held to our warning bar -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS0618;CS0649;CS0169;CS8618;CS8765;CS1998</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="LibCpp2IL/**/*.cs" Exclude="LibCpp2IL/**/obj/**;LibCpp2IL/Wasm/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="AssetRipper.Primitives" Version="3.2.0" />
+    <PackageReference Include="PolySharp" Version="1.15.0" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Big Walk Replay</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.4 system-ui, sans-serif; background: #10131a; color: #dfe5ee; display: flex; height: 100vh; overflow: hidden; }
+  #drop { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 5; background: #10131a; }
+  #drop.hidden { display: none; }
+  #drop .big { font-size: 18px; color: #8fa3bd; }
+  #canvaswrap { flex: 1; position: relative; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #sidebar { width: 300px; border-left: 1px solid #232a36; background: #151a23; display: flex; flex-direction: column; }
+  #sidebar h1 { font-size: 14px; margin: 10px 12px 6px; color: #c9d6e8; }
+  #meta { font-size: 11px; color: #7d8ba0; margin: 0 12px 8px; }
+  .row { display: flex; gap: 8px; align-items: center; padding: 6px 12px; }
+  #scrub { flex: 1; accent-color: #4a8cff; }
+  #time { font-variant-numeric: tabular-nums; min-width: 74px; }
+  .btn { background: #232b3a; border: 1px solid #313c52; color: #cfd9e8; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+  .btn:hover { background: #2c3648; }
+  #towers { padding: 6px 12px; font-size: 12px; }
+  #towers .tower { display: flex; justify-content: space-between; padding: 1px 0; }
+  #towers .done { color: #57d187; }
+  #events { flex: 1; overflow-y: auto; border-top: 1px solid #232a36; padding: 4px 0; }
+  #events .ev { padding: 3px 12px; font-size: 12px; cursor: pointer; }
+  #events .ev:hover { background: #1c2330; }
+  #events .ev .t { color: #6f7f96; margin-right: 8px; }
+  #events .ev .d { color: #aab8cc; }
+  #status { font-size: 11px; color: #6f7f96; padding: 4px 12px; }
+  .legend { font-size: 11px; color: #8fa3bd; padding: 2px 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+  .lg-player::before { background: #4a8cff; }
+  .lg-gourd::before { background: #f2b13c; }
+  .lg-slot::before { background: #57d187; border-radius: 2px !important; }
+  .lg-land::before { background: #6f7f96; width: 4px !important; height: 4px !important; }
+</style>
+</head>
+<body>
+<div id="drop">
+  <div class="big">Drop a <b>.replay.json.gz</b> file here</div>
+  <label class="btn">choose file<input type="file" accept=".gz,.json" hidden></label>
+</div>
+
+<div id="canvaswrap"><canvas id="map"></canvas></div>
+
+<div id="sidebar">
+  <h1>Big Walk Replay</h1>
+  <div id="meta"></div>
+  <div class="row">
+    <button class="btn" id="play">▶</button>
+    <input id="scrub" type="range" step="0.01">
+    <span id="time">0:00</span>
+  </div>
+  <div class="row" style="padding-top:0">
+    <button class="btn" id="sp1">1x</button>
+    <button class="btn" id="sp2">2x</button>
+    <button class="btn" id="sp4">4x</button>
+    <button class="btn" id="sp8">8x</button>
+    <button class="btn" id="trail">trail: on</button>
+  </div>
+  <div class="legend">
+    <span class="lg-player">player</span><span class="lg-gourd">gourd</span>
+    <span class="lg-slot">monument slot</span><span class="lg-land">landmark</span>
+  </div>
+  <div id="towers"></div>
+  <div id="status"></div>
+  <div id="events"></div>
+</div>
+
+<script>
+"use strict";
+const TOWERS = {
+  "Tutorial": [150,151,152,153], "Red": [100,101,102,103,104], "Green": [110,111,112,113,114],
+  "Blue": [120,121,122,123,124], "Yellow": [130,131,132,133,134], "Final": [140,141,142,143,144,145],
+  "Overflow": [160,161,162,163,164,165,166,167,168,169,170,171,172,173,174],
+};
+const GOURD_STATE = ["locked", "loose", "stashed", "pinned"];
+const playerColors = ["#4a8cff","#ff5d5d","#57d187","#f2b13c","#c563f2","#38c6c6","#ff8f3c","#7fbf3c","#3c7dff","#e056a8","#8fa3bd","#b8cc55"];
+
+let replay = null, frames = [], events = [], frameIdx = 0, playing = false, speed = 1, showTrail = true;
+let proj = null; // {scale, offX, offZ, ymin}
+const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
+const scrub = document.getElementById("scrub"), timeEl = document.getElementById("time");
+const playBtn = document.getElementById("play"), trailBtn = document.getElementById("trail");
+const eventsEl = document.getElementById("events"), towersEl = document.getElementById("towers");
+
+// ---------- file loading ----------
+const input = document.querySelector("#drop input");
+input.addEventListener("change", e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+document.getElementById("drop").addEventListener("dragover", e => e.preventDefault());
+document.getElementById("drop").addEventListener("drop", e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+
+async function loadFile(file) {
+  const buf = await file.arrayBuffer();
+  await parseBuffer(buf, file.name);
+}
+
+async function parseBuffer(buf, name) {
+  let text;
+  if (name.endsWith(".gz") || (buf[0] === 0x1f && buf[1] === 0x8b)) {
+    const ds = new DecompressionStream("gzip");
+    const stream = new Blob([buf]).stream().pipeThrough(ds);
+    text = await new Response(stream).text();
+  } else {
+    text = new TextDecoder().decode(buf);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    alert("could not parse replay file: " + err);
+    return;
+  }
+  replay = parsed;
+  frames = replay.frames || [];
+  events = replay.events || [];
+  if (!frames.length) { alert("no frames in replay"); return; }
+  document.getElementById("drop").classList.add("hidden");
+  setupProjection();
+  renderTowers();
+  renderEvents();
+  frameIdx = 0;
+  scrub.max = frames.length - 1;
+  scrub.value = 0;
+  updateMeta();
+  tick();
+  setPlaying(true);
+}
+
+async function loadUrl(url) {
+  const r = await fetch(url);
+  const buf = await r.arrayBuffer();
+  await parseBuffer(buf, url);
+}
+
+const urlParam = new URLSearchParams(location.search).get("replay");
+if (urlParam) loadUrl(urlParam);
+function updateMeta() {
+  const h = replay.header || {};
+  document.getElementById("meta").textContent =
+    `game ${h.gameVersion || "?"} · unity ${h.unityVersion || "?"} · ` +
+    `${frames.length} frames @ ${(h.sampleIntervalSec || 0.1).toFixed(2)}s`;
+}
+
+// ---------- projection ----------
+function setupProjection() {
+  const h = replay.header;
+  const pts = [];
+  for (const l of (h.landmarks || [])) pts.push([l.x, l.z]);
+  for (const fr of frames) {
+    for (const p of fr.players) pts.push([p.x, p.z]);
+    for (const g of fr.gourds) pts.push([g.x, g.z]);
+  }
+  let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
+  for (const [x, z] of pts) {
+    xmin = Math.min(xmin, x); xmax = Math.max(xmax, x);
+    zmin = Math.min(zmin, z); zmax = Math.max(zmax, z);
+  }
+  const pad = 40;
+  const w = canvas.clientWidth - pad * 2, hpx = canvas.clientHeight - pad * 2;
+  const scale = Math.min(w / Math.max(1, xmax - xmin), hpx / Math.max(1, zmax - zmin));
+  proj = {
+    scale, offX: pad + (w - scale * (xmax - xmin)) / 2 - xmin * scale,
+    offZ: pad + (hpx - scale * (zmax - zmin)) / 2 - zmin * scale,
+  };
+}
+
+function toScreen(x, z) {
+  return [proj.offX + x * proj.scale, proj.offZ + z * proj.scale];
+}
+
+function size() {
+  canvas.width = canvas.clientWidth * devicePixelRatio;
+  canvas.height = canvas.clientHeight * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+
+// ---------- rendering ----------
+function render() {
+  if (!replay) return;
+  const fr = frames[Math.min(frameIdx, frames.length - 1)];
+  if (!fr) return;
+  size();
+  ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+
+  const h = replay.header;
+  // landmarks
+  ctx.fillStyle = "#6f7f96";
+  for (const l of (h.landmarks || [])) {
+    const [sx, sy] = toScreen(l.x, l.z);
+    ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+  }
+
+  // monument slots
+  const filled = new Set(fr.monuments.filter(m => m.filled).map(m => m.homeName));
+  const homeLm = new Map((h.landmarks || []).filter(l => l.id.startsWith("home-")).map(l => [parseInt(l.id.slice(5), 10), [l.x, l.z]]));
+  for (const m of fr.monuments) {
+    const pos = homeLm.get(m.homeName);
+    if (!pos) continue;
+    const [sx, sy] = toScreen(pos[0], pos[1]);
+    ctx.fillStyle = m.filled ? "#57d187" : "#4f5d72";
+    ctx.strokeStyle = m.filled ? "#57d187" : "#4f5d72";
+    ctx.lineWidth = 1;
+    ctx.fillRect(sx - 4, sy - 4, 8, 8);
+    ctx.strokeRect(sx - 4, sy - 4, 8, 8);
+  }
+
+  // gourds (before players so stashed ones sit under player markers)
+  const gourdPos = new Map();
+  for (const g of fr.gourds) {
+    const [sx, sy] = toScreen(g.x, g.z);
+    ctx.beginPath();
+    ctx.arc(sx, sy, 5, 0, Math.PI * 2);
+    ctx.fillStyle = g.state === 3 ? "#57d187" : g.state === 2 ? "#8f6cf2" : "#f2b13c";
+    ctx.globalAlpha = g.state === 0 ? 0.35 : 0.9;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    gourdPos.set(g.name, [sx, sy]);
+  }
+
+  // trails
+  if (showTrail) {
+    ctx.lineWidth = 1;
+    const start = Math.max(0, frameIdx - 40);
+    for (let i = 0; i < fr.players.length; i++) {
+      const p = fr.players[i];
+      ctx.strokeStyle = playerColors[p.netId % playerColors.length];
+      ctx.beginPath();
+      let started = false;
+      for (let j = start; j <= frameIdx; j++) {
+        const pp = frames[j].players.find(q => q.netId === p.netId);
+        if (!pp) continue;
+        const [sx, sy] = toScreen(pp.x, pp.z);
+        if (!started) { ctx.moveTo(sx, sy); started = true; } else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // players
+  for (let i = 0; i < fr.players.length; i++) {
+    const p = fr.players[i];
+    const color = playerColors[p.netId % playerColors.length];
+    const [sx, sy] = toScreen(p.x, p.z);
+    ctx.beginPath();
+    ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = p.drowsy ? "#ffd24a" : "#0c0e13";
+    ctx.stroke();
+    // yaw arrow
+    const ang = p.yaw;
+    ctx.strokeStyle = "#0c0e13";
+    ctx.beginPath();
+    ctx.moveTo(sx + Math.cos(ang) * 2, sy + Math.sin(ang) * 2);
+    ctx.lineTo(sx + Math.cos(ang) * 12, sy + Math.sin(ang) * 12);
+    ctx.stroke();
+    // label
+    ctx.fillStyle = color;
+    ctx.font = "11px system-ui";
+    ctx.fillText(`#${p.netId}` + (p.carriedGourd ? " 🎃" : "") + (p.drowsy ? " 💤" : ""), sx + 9, sy - 2);
+  }
+}
+
+// ---------- playback ----------
+function tick() {
+  if (!replay) return;
+  const fr = frames[Math.min(frameIdx, frames.length - 1)];
+  const h = replay.header || {};
+  const dt = (h.sampleIntervalSec || 0.1) * speed;
+  frameIdx += dt / (h.sampleIntervalSec || 0.1);
+  if (frameIdx >= frames.length - 1) { frameIdx = frames.length - 1; setPlaying(false); }
+  scrub.value = frameIdx;
+  const secs = frameIdx * (h.sampleIntervalSec || 0.1);
+  timeEl.textContent = fmt(secs);
+  render();
+  updateStatus(fr);
+}
+
+function fmt(s) {
+  s = Math.floor(s);
+  const m = Math.floor(s / 60), r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+function setPlaying(v) {
+  playing = v;
+  playBtn.textContent = playing ? "⏸" : "▶";
+}
+
+function play(reset) {
+  setPlaying(true);
+}
+
+playBtn.addEventListener("click", () => setPlaying(!playing));
+scrub.addEventListener("input", () => { frameIdx = +scrub.value; tick(); });
+for (const [mult, btn] of [[1, document.getElementById("sp1")], [2, document.getElementById("sp2")], [4, document.getElementById("sp4")], [8, document.getElementById("sp8")]]) {
+  btn.addEventListener("click", () => { speed = mult; });
+}
+trailBtn.addEventListener("click", () => { showTrail = !showTrail; trailBtn.textContent = "trail: " + (showTrail ? "on" : "off"); });
+
+setInterval(() => { if (playing) tick(); }, 33);
+
+function updateStatus(fr) {
+  const alive = fr.players.filter(p => p.alive).length;
+  document.getElementById("status").textContent =
+    `players ${alive}/${fr.players.length} · gourds ${fr.gourds.length}`;
+}
+
+function renderTowers() {
+  towersEl.textContent = "";
+  for (const [name, homes] of Object.entries(TOWERS)) {
+    const el = document.createElement("div");
+    el.className = "tower";
+    el.id = "tw-" + name;
+    el.innerHTML = `<span>${name}</span><span>0/${homes.length}</span>`;
+    towersEl.appendChild(el);
+  }
+}
+
+function updateTowers(fr) {
+  const filled = new Set(fr.monuments.filter(m => m.filled).map(m => m.homeName));
+  for (const [name, homes] of Object.entries(TOWERS)) {
+    const n = homes.filter(h => filled.has(h)).length;
+    const el = document.querySelector(`#tw-${name} span:last-child`);
+    if (!el) continue;
+    el.textContent = `${n}/${homes.length}`;
+    el.parentElement.className = "tower" + (n === homes.length ? " done" : "");
+  }
+}
+
+function renderEvents() {
+  eventsEl.textContent = "";
+  const h = replay.header || {};
+  const dt = h.sampleIntervalSec || 0.1;
+  for (const ev of events) {
+    const el = document.createElement("div");
+    el.className = "ev";
+    el.innerHTML = `<span class="t">${fmt(ev.time)}</span><span class="d">${ev.type}${ev.detail ? " · " + ev.detail : ""}</span>`;
+    el.addEventListener("click", () => {
+      frameIdx = Math.min(frames.length - 1, Math.floor(ev.time / dt));
+      scrub.value = frameIdx;
+      tick();
+    });
+    eventsEl.appendChild(el);
+  }
+}
+
+window.addEventListener("resize", () => { if (replay) render(); });
+</script>
+</body>
+</html>

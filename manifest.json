@@ -1,0 +1,279 @@
+{
+  "FormatVersion": 1,
+  "GameVersion": "1.5.1 2608271531",
+  "BuildId": 24982892,
+  "UnityVersion": "6000.3.17f1",
+  "ImageBase": 6442450944,
+  "ImageSize": 73736192,
+  "MetaregRva": 57565552,
+  "TypesTableRva": 57705008,
+  "FieldOffsetsTableRva": 62954016,
+  "TypeDefSizesTableRva": 63127392,
+  "TypesCount": 74655,
+  "FieldOffsetsCount": 21672,
+  "TypeDefSizesCount": 21672,
+  "Classes": {
+    "PlayerCharacter": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5498,
+      "TypeDefIndex": 5498,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "allPlayerCharacters",
+          "Offset": 0,
+          "IsStatic": true
+        },
+        {
+          "Name": "mover",
+          "Offset": 144,
+          "IsStatic": false
+        },
+        {
+          "Name": "playerNetworking",
+          "Offset": 416,
+          "IsStatic": false
+        },
+        {
+          "Name": "registry",
+          "Offset": 240,
+          "IsStatic": false
+        },
+        {
+          "Name": "sleeper",
+          "Offset": 264,
+          "IsStatic": false
+        },
+        {
+          "Name": "bypassUpdate",
+          "Offset": 491,
+          "IsStatic": false
+        }
+      ]
+    },
+    "PlayerNetworking": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5513,
+      "TypeDefIndex": 5513,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "isPending",
+          "Offset": 336,
+          "IsStatic": false
+        }
+      ]
+    },
+    "PropHome": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5585,
+      "TypeDefIndex": 5585,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "allPropHomes",
+          "Offset": 8,
+          "IsStatic": true
+        },
+        {
+          "Name": "onPin",
+          "Offset": 64,
+          "IsStatic": false
+        },
+        {
+          "Name": "pinGroup",
+          "Offset": 96,
+          "IsStatic": false
+        },
+        {
+          "Name": "pinnedProp",
+          "Offset": 216,
+          "IsStatic": false
+        },
+        {
+          "Name": "saveableHomeName",
+          "Offset": 152,
+          "IsStatic": false
+        },
+        {
+          "Name": "parentCharacter",
+          "Offset": 48,
+          "IsStatic": false
+        }
+      ]
+    },
+    "Prop": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5578,
+      "TypeDefIndex": 5578,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "allProps",
+          "Offset": 0,
+          "IsStatic": true
+        },
+        {
+          "Name": "saveablePropName",
+          "Offset": 184,
+          "IsStatic": false
+        },
+        {
+          "Name": "exclusiveHolder",
+          "Offset": 704,
+          "IsStatic": false
+        }
+      ]
+    },
+    "Corpse": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5034,
+      "TypeDefIndex": 5034,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "allCorpses",
+          "Offset": 0,
+          "IsStatic": true
+        }
+      ]
+    },
+    "PlayerSleeper": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5484,
+      "TypeDefIndex": 5484,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "timeTilSleep",
+          "Offset": 16,
+          "IsStatic": false
+        }
+      ]
+    },
+    "PeckSwitch": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5355,
+      "TypeDefIndex": 5355,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "trackedStateSystem",
+          "Offset": 32,
+          "IsStatic": false
+        }
+      ]
+    },
+    "TrackedPeckState": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5361,
+      "TypeDefIndex": 5361,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "currentPeckContext",
+          "Offset": 56,
+          "IsStatic": false
+        }
+      ]
+    },
+    "PeckContext": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5340,
+      "TypeDefIndex": 5340,
+      "IsValueType": true,
+      "Fields": [
+        {
+          "Name": "playerIdentity",
+          "Offset": 0,
+          "IsStatic": false
+        },
+        {
+          "Name": "propIdentity",
+          "Offset": 8,
+          "IsStatic": false
+        },
+        {
+          "Name": "compressedState",
+          "Offset": 16,
+          "IsStatic": false
+        },
+        {
+          "Name": "actionNumber",
+          "Offset": 20,
+          "IsStatic": false
+        }
+      ]
+    },
+    "MainMenuManager": {
+      "Image": "Assembly-CSharp.dll",
+      "TypeIndex": 5311,
+      "TypeDefIndex": 5311,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "entryMode",
+          "Offset": 8,
+          "IsStatic": true
+        }
+      ]
+    },
+    "NetworkIdentity": {
+      "Image": "Mirror.dll",
+      "TypeIndex": 18326,
+      "TypeDefIndex": 18326,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "\u003CnetId\u003Ek__BackingField",
+          "Offset": 48,
+          "IsStatic": false
+        },
+        {
+          "Name": "\u003CisLocalPlayer\u003Ek__BackingField",
+          "Offset": 34,
+          "IsStatic": false
+        }
+      ]
+    },
+    "NetworkBehaviour": {
+      "Image": "Mirror.dll",
+      "TypeIndex": 18308,
+      "TypeDefIndex": 18308,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "\u003CnetIdentity\u003Ek__BackingField",
+          "Offset": 64,
+          "IsStatic": false
+        }
+      ]
+    },
+    "NetworkClient": {
+      "Image": "Mirror.dll",
+      "TypeIndex": 18317,
+      "TypeDefIndex": 18317,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "connectState",
+          "Offset": 48,
+          "IsStatic": true
+        }
+      ]
+    },
+    "NetworkServer": {
+      "Image": "Mirror.dll",
+      "TypeIndex": 18349,
+      "TypeDefIndex": 18349,
+      "IsValueType": false,
+      "Fields": [
+        {
+          "Name": "\u003Cactive\u003Ek__BackingField",
+          "Offset": 57,
+          "IsStatic": true
+        }
+      ]
+    }
+  }
+}

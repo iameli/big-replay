@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BigWalkReplay.Recorder</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GameAccess\GameAccess.csproj" />
+    <ProjectReference Include="..\Replay.Format\Replay.Format.csproj" />
+  </ItemGroup>
+</Project>

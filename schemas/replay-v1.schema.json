@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/big-walk-replay/replay-v1.schema.json",
+  "title": "Big Walk replay file (v1)",
+  "description": "Gzip-compressed JSON produced by the recorder. Header + frames + events.",
+  "type": "object",
+  "required": ["header", "frames", "events"],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": ["formatVersion", "gameVersion", "unityVersion", "recordedAt", "sampleIntervalSec", "landmarks"],
+      "properties": {
+        "formatVersion": { "const": 1 },
+        "gameVersion": { "type": "string" },
+        "unityVersion": { "type": "string" },
+        "recordedAt": { "type": "string" },
+        "sampleIntervalSec": { "type": "number" },
+        "landmarks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/landmark" }
+        }
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/frame" }
+    },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/event" }
+    }
+  },
+  "$defs": {
+    "landmark": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "required": ["time", "players", "gourds", "monuments"],
+      "properties": {
+        "time": { "type": "number" },
+        "players": { "type": "array", "items": { "$ref": "#/$defs/player" } },
+        "gourds": { "type": "array", "items": { "$ref": "#/$defs/gourd" } },
+        "monuments": { "type": "array", "items": { "$ref": "#/$defs/monument" } }
+      }
+    },
+    "player": {
+      "type": "object",
+      "required": ["netId"],
+      "properties": {
+        "netId": { "type": "integer" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "yaw": { "type": "number" },
+        "alive": { "type": "boolean" },
+        "isPending": { "type": "boolean" },
+        "drowsy": { "type": "boolean" },
+        "carriedGourd": { "type": "integer" }
+      }
+    },
+    "gourd": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "integer" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "state": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "pinnedAtHome": { "type": "integer" },
+        "holderNetId": { "type": "integer" }
+      }
+    },
+    "monument": {
+      "type": "object",
+      "required": ["homeName"],
+      "properties": {
+        "homeName": { "type": "integer" },
+        "filled": { "type": "boolean" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["time", "type"],
+      "properties": {
+        "time": { "type": "number" },
+        "type": { "type": "string" },
+        "detail": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

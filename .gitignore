@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+*.user
+dist/
+out/
+*.replay.json
+*.replay.json.gz
