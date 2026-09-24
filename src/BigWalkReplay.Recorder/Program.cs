@@ -130,7 +130,8 @@ internal static class Program
                     break;
                 case "-o" or "--out" when i + 1 < args.Length:
                     outPath = args[++i];
-                    break;
+                case _ when args[i].EndsWith(".json", StringComparison.OrdinalIgnoreCase):
+                    break; // positional manifest (already resolved in Main)
                 default:
                     throw new ArgumentException($"unknown option '{args[i]}'");
             }
