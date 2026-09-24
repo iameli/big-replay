@@ -25,6 +25,7 @@ public sealed class ManifestData
         public int TypeIndex { get; set; }
         public bool IsValueType { get; set; }
         public List<FieldEntryData> Fields { get; set; } = new();
+        public List<StaticEntryData> Statics { get; set; } = new();
     }
 
     public sealed class FieldEntryData
@@ -32,6 +33,13 @@ public sealed class ManifestData
         public string Name { get; set; } = "";
         public int Offset { get; set; }
         public bool IsStatic { get; set; }
+    }
+
+    public sealed class StaticEntryData
+    {
+        public string Name { get; set; } = "";
+        public int Size { get; set; }
+        public int Offset { get; set; }
     }
 }
 

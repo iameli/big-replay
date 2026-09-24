@@ -55,7 +55,7 @@ internal static class Program
             int done = entries.Count(e => e.Value.Resolved);
             foreach (var (_, cls) in entries)
             {
-                cls.TryResolveStatics();
+                cls.TryResolveStaticBlock();
             }
             if (entries.All(e => e.Value.Resolved))
             {
@@ -100,7 +100,7 @@ internal static class Program
         using var game = GameProcess.Attach();
         Console.WriteLine($"attached: GameAssembly.dll base=0x{game.GameAssemblyBase:X} size=0x{game.GameAssemblySize:X}");
 
-        var layout = GameLayout.AttachReadOnly(game, manifestPath);
+        var layout = GameLayout.Attach(game, manifestPath);
         Console.WriteLine($"manifest OK: build {layout.Manifest.BuildId} ({layout.Manifest.GameVersion}) — pure-read mode: no allocations, no threads");
 
         foreach (var (name, cls) in layout.Classes)

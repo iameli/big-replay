@@ -32,18 +32,15 @@ public sealed class GameStateReader
     private long StaticSlot(string cls, string field)
     {
         var c = C(cls);
-        c.TryResolveStatics();
+        c.TryResolveStaticBlock();
         return c.StaticSlot(field);
     }
-
-    // ---- lobby / session state ----
 
     public bool IsServerActive()
     {
         long slot = StaticSlot("NetworkServer", "<active>k__BackingField");
         return slot != 0 && _g.ReadBool(slot);
     }
-
     public int GetConnectState()
     {
         long slot = StaticSlot("NetworkClient", "connectState");
