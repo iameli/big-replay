@@ -45,10 +45,12 @@ public sealed unsafe class GameProcess : IDisposable
             throw new InvalidOperationException($"No {processName} process found. Is the game running?");
         }
 
-        uint fullAccess = ProcessVmRead | ProcessQueryInformation;
+        uint fullAccess = ProcessVmRead | ProcessVmWrite | ProcessVmOperation | ProcessCreateThread | ProcessQueryInformation;
         nint handle = OpenProcess(fullAccess, false, (uint)proc.Id);
+        int fullErr = Marshal.GetLastWin32Error();
         if (handle == 0)
         {
+            Console.Error.WriteLine($"WARN: OpenProcess(full access 0x{fullAccess:X}) failed ({fullErr}); falling back to read-only handle");
             handle = OpenProcess(ProcessVmRead | ProcessQueryLimitedInformation, false, (uint)proc.Id);
         }
         if (handle == 0)

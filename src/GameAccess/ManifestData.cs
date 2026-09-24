@@ -21,6 +21,7 @@ public sealed class ManifestData
     public sealed class ClassEntryData
     {
         public string Image { get; set; } = "";
+        public string Namespace { get; set; } = "";
         public int TypeIndex { get; set; }
         public bool IsValueType { get; set; }
         public List<FieldEntryData> Fields { get; set; } = new();
@@ -53,10 +54,9 @@ public static class ManifestLoader
     }
 
     /// <summary>
-    /// Validate the manifest's binary table RVAs against the loaded module via pure reads.
-    /// Returns the module base; throws if the build does not match the manifest.
+    /// Validate the manifest against the loaded module via pure reads. Throws if the build differs.
     /// </summary>
-    public static long ValidateAgainstProcess(GameProcess game, ManifestData m)
+    public static void ValidateAgainstProcess(GameProcess game, ManifestData m)
     {
         long baseAddr = game.GameAssemblyBase;
 
@@ -74,18 +74,5 @@ public static class ManifestLoader
                 $"game build mismatch: manifest wants size 0x{m.ImageSize:X}, " +
                 $"loaded has base 0x{imageBase:X} size 0x{sizeOfImage:X}. Regenerate the manifest for this build.");
         }
-
-        // registration struct sanity: table pointers must lie inside the module
-        long metaReg = baseAddr + (long)m.MetaregRva;
-        long end = baseAddr + sizeOfImage;
-        long types = baseAddr + (long)m.TypesTableRva;
-        long fieldOffsets = baseAddr + (long)m.FieldOffsetsTableRva;
-        if (IsIn(metaReg, baseAddr, end) && IsIn(types, baseAddr, end) && IsIn(fieldOffsets, baseAddr, end))
-        {
-            return baseAddr;
-        }
-        throw new InvalidOperationException("manifest table RVAs do not lie within the loaded module");
     }
-
-    private static bool IsIn(long addr, long start, long end) => addr >= start && addr < end;
 }

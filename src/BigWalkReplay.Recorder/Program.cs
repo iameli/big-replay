@@ -47,20 +47,25 @@ internal static class Program
         var layout = GameLayout.Attach(game, manifestPath);
         Console.WriteLine($"manifest OK: build {layout.Manifest.BuildId} ({layout.Manifest.GameVersion})");
 
-        int resolved = 0;
-        foreach (var (name, cls) in layout.Classes)
+        var entries = layout.Classes.Select(kv => (kv.Key, kv.Value)).ToArray();
+        Console.WriteLine("resolving statics via il2cpp metadata API (polls until classes initialize)...");
+        for (int attempt = 0; attempt < 60; attempt++)
         {
-            if (cls.TryResolveStaticBlock())
+            int done = entries.Count(e => e.Value.Resolved);
+            foreach (var (_, cls) in entries)
             {
-                resolved++;
-                Console.WriteLine($"  static block {name}: 0x{cls.StaticBlock:X}");
+                cls.TryResolveStatics();
             }
-            else
+            if (entries.All(e => e.Value.Resolved))
             {
-                Console.WriteLine($"  static block {name}: (not initialized yet)");
+                break;
             }
+            Thread.Sleep(500);
         }
-        Console.WriteLine($"static blocks resolved: {resolved}/{layout.Classes.Count}");
+        foreach (var (name, cls) in entries)
+        {
+            Console.WriteLine($"  static block {name}: {(cls.Resolved ? $"0x{cls.StaticBlock:X}" : "(class not initialized yet)")}");
+        }
 
         var reader = new GameStateReader(game, layout);
         Console.WriteLine($"server active: {reader.IsServerActive()}  connectState: {reader.GetConnectState()}");

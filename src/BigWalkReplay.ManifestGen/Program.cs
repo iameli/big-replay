@@ -8,8 +8,8 @@ using LibCpp2IL.Metadata;
 namespace BigWalkReplay.ManifestGen;
 
 /// <summary>
-/// Generates the per-build manifest the recorder needs: field offsets (instance + static-slot)
-/// and the binary table RVAs for resolving the runtime static blocks — all pure reads.
+/// Generates the per-build manifest the recorder needs: instance field offsets and per-class
+/// identity (namespace, type index, static-field list) plus the binary table RVAs.
 ///
 ///   dotnet run --project src/BigWalkReplay.ManifestGen -- <gameFolder> [out.json]
 /// </summary>
@@ -18,20 +18,20 @@ internal static class Program
     // (image, className, field names) — parallel to the recorder's GameLayout.
     private static readonly (string Image, string Class, string[] Fields)[] Wanted =
     [
-        ("Assembly-CSharp.dll", "PlayerCharacter", ["allPlayerCharacters", "mover", "playerNetworking", "registry", "sleeper", "bypassUpdate"]),
-        ("Assembly-CSharp.dll", "PlayerNetworking", ["isPending"]),
-        ("Assembly-CSharp.dll", "PropHome", ["allPropHomes", "onPin", "pinGroup", "pinnedProp", "saveableHomeName", "parentCharacter"]),
-        ("Assembly-CSharp.dll", "Prop", ["allProps", "saveablePropName", "exclusiveHolder"]),
-        ("Assembly-CSharp.dll", "Corpse", ["allCorpses"]),
-        ("Assembly-CSharp.dll", "PlayerSleeper", ["timeTilSleep"]),
-        ("Assembly-CSharp.dll", "PeckSwitch", ["trackedStateSystem"]),
-        ("Assembly-CSharp.dll", "TrackedPeckState", ["currentPeckContext"]),
-        ("Assembly-CSharp.dll", "PeckContext", ["playerIdentity", "propIdentity", "compressedState", "actionNumber"]),
-        ("Assembly-CSharp.dll", "MainMenuManager", ["entryMode"]),
-        ("Mirror.dll", "NetworkIdentity", ["<netId>k__BackingField", "<isLocalPlayer>k__BackingField"]),
-        ("Mirror.dll", "NetworkBehaviour", ["<netIdentity>k__BackingField"]),
-        ("Mirror.dll", "NetworkClient", ["connectState"]),
-        ("Mirror.dll", "NetworkServer", ["<active>k__BackingField"]),
+        ("Assembly-CSharp", "PlayerCharacter", ["allPlayerCharacters", "mover", "playerNetworking", "registry", "sleeper", "bypassUpdate"]),
+        ("Assembly-CSharp", "PlayerNetworking", ["isPending"]),
+        ("Assembly-CSharp", "PropHome", ["allPropHomes", "onPin", "pinGroup", "pinnedProp", "saveableHomeName", "parentCharacter"]),
+        ("Assembly-CSharp", "Prop", ["allProps", "saveablePropName", "exclusiveHolder"]),
+        ("Assembly-CSharp", "Corpse", ["allCorpses"]),
+        ("Assembly-CSharp", "PlayerSleeper", ["timeTilSleep"]),
+        ("Assembly-CSharp", "PeckSwitch", ["trackedStateSystem"]),
+        ("Assembly-CSharp", "TrackedPeckState", ["currentPeckContext"]),
+        ("Assembly-CSharp", "PeckContext", ["playerIdentity", "propIdentity", "compressedState", "actionNumber"]),
+        ("Assembly-CSharp", "MainMenuManager", ["entryMode"]),
+        ("Mirror", "NetworkIdentity", ["<netId>k__BackingField", "<isLocalPlayer>k__BackingField"]),
+        ("Mirror", "NetworkBehaviour", ["<netIdentity>k__BackingField"]),
+        ("Mirror", "NetworkClient", ["connectState"]),
+        ("Mirror", "NetworkServer", ["<active>k__BackingField"]),
     ];
 
     private const string GameVersion = "1.5.1 2608271531";
@@ -132,13 +132,14 @@ internal static class Program
             var entry = new ClassEntry
             {
                 Image = imageName,
+                Namespace = td.Namespace ?? "",
                 TypeIndex = td.TypeIndex.Value,
                 TypeDefIndex = Array.IndexOf(metadata.typeDefs, td),
                 IsValueType = td.IsValueType,
                 Fields = fieldInfos,
             };
             manifest.Classes[className] = entry;
-            Console.WriteLine($"  {className}: typeIndex={entry.TypeIndex} typeDef={entry.TypeDefIndex} vt={entry.IsValueType}");
+            Console.WriteLine($"  {className}: typeIndex={entry.TypeIndex} ns='{entry.Namespace}' vt={entry.IsValueType}");
             foreach (var f in fieldInfos)
             {
                 Console.WriteLine($"    {(f.IsStatic ? "static " : "field  ")} {f.Name} @ 0x{f.Offset:X}");
@@ -216,6 +217,7 @@ internal static class Program
     public sealed class ClassEntry
     {
         public string Image { get; set; } = "";
+        public string Namespace { get; set; } = "";
         public int TypeIndex { get; set; }
         public int TypeDefIndex { get; set; }
         public bool IsValueType { get; set; }

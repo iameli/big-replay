@@ -4,7 +4,7 @@ namespace GameAccess;
 
 /// <summary>
 /// Reads game world state (players, gourds, monuments, lobby state) via the manifest-backed
-/// layout. Steady-state: pure ReadProcessMemory.
+/// layout. Sampling is pure ReadProcessMemory; static slots are re-polled until initialized.
 /// </summary>
 public sealed class GameStateReader
 {
@@ -32,7 +32,7 @@ public sealed class GameStateReader
     private long StaticSlot(string cls, string field)
     {
         var c = C(cls);
-        c.TryResolveStaticBlock();
+        c.TryResolveStatics();
         return c.StaticSlot(field);
     }
 
