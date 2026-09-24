@@ -168,7 +168,6 @@ internal static class Program
             e.Cancel = true;
             _stop = true;
         };
-
         while (!_stop)
         {
             double t = clock.Elapsed.TotalSeconds;
@@ -183,6 +182,14 @@ internal static class Program
             {
                 bool active = reader.IsServerActive();
                 var players = reader.ReadPlayers();
+
+                if (clock.Elapsed.TotalSeconds - _lastStatus > 2.0)
+                {
+                    _lastStatus = clock.Elapsed.TotalSeconds;
+                    int blocks = layout.Classes.Values.Count(c => c.Resolved);
+                    Console.WriteLine($"  t={t,5:F1}s  active={active}  players={players.Count}  blocks={blocks}/{layout.Classes.Count}");
+                }
+
                 var (monuments, landmarks) = reader.ReadHomes();
 
                 if (!headerWritten && active && players.Count > 0)
@@ -294,11 +301,23 @@ internal static class Program
                 Console.Error.WriteLine($"sample failed (skipping): {e.Message}");
             }
         }
-
+        if (!headerWritten)
+        {
+            writer.WriteHeader(new ReplayHeader
+            {
+                GameVersion = GameVersion,
+                UnityVersion = UnityVersion,
+                RecordedAt = DateTime.UtcNow,
+                SampleIntervalSec = interval,
+                Landmarks = [],
+            });
+            Console.WriteLine("no live walk was detected during this session (header written empty)");
+        }
         writer.Finish(events);
         Console.WriteLine($"\nwrote {outPath} ({events.Count} events)");
         return 0;
     }
 
     private static volatile bool _stop;
+    private static double _lastStatus;
 }
