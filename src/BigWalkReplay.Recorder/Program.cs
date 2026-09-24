@@ -137,7 +137,9 @@ internal static class Program
                         break; // positional manifest (already resolved in Main)
                     }
                     throw new ArgumentException($"unknown option '{args[i]}'");
+            }
         }
+        rate = Math.Clamp(rate, 1, 60);
         rate = Math.Clamp(rate, 1, 60);
         outPath ??= $"bigwalk-replay-{DateTime.UtcNow:yyyyMMdd-HHmmss}.replay.json.gz";
 
