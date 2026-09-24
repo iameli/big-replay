@@ -49,7 +49,7 @@ internal static class Program
         Console.WriteLine($"manifest OK: build {layout.Manifest.BuildId} ({layout.Manifest.GameVersion})");
 
         var entries = layout.Classes.Select(kv => (kv.Key, kv.Value)).ToArray();
-        Console.WriteLine("resolving statics via il2cpp metadata API (polls until classes initialize)...");
+        Console.WriteLine("waiting for static blocks (classes initialize in-world)...");
         for (int attempt = 0; attempt < 60; attempt++)
         {
             int done = entries.Count(e => e.Value.Resolved);

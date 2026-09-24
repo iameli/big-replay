@@ -45,7 +45,7 @@ public sealed unsafe class GameProcess : IDisposable
             throw new InvalidOperationException($"No {processName} process found. Is the game running?");
         }
 
-        uint fullAccess = ProcessVmRead | ProcessVmWrite | ProcessVmOperation | ProcessCreateThread | ProcessQueryInformation;
+        uint fullAccess = ProcessVmRead | ProcessQueryInformation;
         nint handle = OpenProcess(fullAccess, false, (uint)proc.Id);
         int fullErr = Marshal.GetLastWin32Error();
         if (handle == 0)
