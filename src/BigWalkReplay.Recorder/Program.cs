@@ -27,8 +27,9 @@ internal static class Program
             return mode switch
             {
                 "probe" => Probe(manifestPath),
+                "probe-ro" => ProbeReadOnly(manifestPath),
                 "record" => Record(manifestPath, args.Skip(2).ToArray()),
-                _ => throw new ArgumentException($"unknown mode '{mode}' (use 'probe' or 'record')"),
+                _ => throw new ArgumentException($"unknown mode '{mode}' (use 'probe', 'probe-ro' or 'record')"),
             };
         }
         catch (Exception e)
@@ -91,6 +92,27 @@ internal static class Program
         {
             Console.WriteLine($"  gourd {g.Name} state={g.State} pos=({g.X:F1}, {g.Y:F1}, {g.Z:F1}) holder={g.HolderNetId}");
         }
+        return 0;
+    }
+
+    private static int ProbeReadOnly(string manifestPath)
+    {
+        using var game = GameProcess.Attach();
+        Console.WriteLine($"attached: GameAssembly.dll base=0x{game.GameAssemblyBase:X} size=0x{game.GameAssemblySize:X}");
+
+        var layout = GameLayout.AttachReadOnly(game, manifestPath);
+        Console.WriteLine($"manifest OK: build {layout.Manifest.BuildId} ({layout.Manifest.GameVersion}) — pure-read mode: no allocations, no threads");
+
+        foreach (var (name, cls) in layout.Classes)
+        {
+            Console.WriteLine($"  class {name}: statics=[{string.Join(", ", cls.StaticFieldNames)}]");
+        }
+        Console.WriteLine("idling 30s (attach + reads only)…");
+        for (int i = 0; i < 30; i++)
+        {
+            Thread.Sleep(1000);
+        }
+        Console.WriteLine("done");
         return 0;
     }
 

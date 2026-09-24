@@ -15,6 +15,9 @@ public sealed class ClassLayout
 
     public readonly record struct Field(int Offset, bool IsStatic);
 
+    public IReadOnlyList<string> StaticFieldNames =>
+        Fields.Where(f => f.Value.IsStatic).Select(f => f.Key).ToArray();
+
     private readonly Dictionary<string, int> _staticOffsets = new(StringComparer.Ordinal);
     private Il2CppResolver? _resolver;
     private long _resolvedAt;
@@ -22,7 +25,7 @@ public sealed class ClassLayout
     public ulong StaticBlock { get; private set; }
     public bool Resolved { get; private set; }
 
-    /// <summary>Attach the one-shot API resolver (called once at attach).</summary>
+    /// <summary>Attach the one-shot API resolver (called once at attach; unused in pure-read mode).</summary>
     public void AttachApi(Il2CppResolver resolver) => _resolver = resolver;
 
     /// <summary>
@@ -35,9 +38,10 @@ public sealed class ClassLayout
         {
             return true;
         }
-        if (_resolver is null)
+        if (_resolver is null || StaticFieldNames.Count == 0)
         {
-            return true; // no statics -> trivially resolved
+            Resolved = true;
+            return true;
         }
         if (Environment.TickCount64 - _resolvedAt < 500)
         {
@@ -45,13 +49,7 @@ public sealed class ClassLayout
         }
         _resolvedAt = Environment.TickCount64;
 
-        var statics = Fields.Where(f => f.Value.IsStatic).Select(f => f.Key).ToArray();
-        if (statics.Length == 0)
-        {
-            Resolved = true;
-            return true;
-        }
-
+        var statics = StaticFieldNames.ToArray();
         var r = _resolver.Resolve(Image, Namespace, Name, statics);
         if (!r.Ok)
         {
@@ -82,8 +80,8 @@ public sealed class ClassLayout
 }
 
 /// <summary>
-/// Attach-time layout: loads the offline manifest, validates the running build, and wires the
-/// one-shot il2cpp metadata resolver for static resolution. Sampling stays pure reads.
+/// Attach-time layout: loads the offline manifest, validates the running build, optionally wires
+/// the one-shot il2cpp metadata resolver for static resolution. Sampling stays pure reads.
 /// </summary>
 public sealed class GameLayout
 {
@@ -92,11 +90,31 @@ public sealed class GameLayout
 
     public ClassLayout this[string name] => Classes[name];
 
+    /// <summary>Attach with the one-shot API static resolver (probe/record modes).</summary>
     public static GameLayout Attach(GameProcess game, string manifestPath)
+    {
+        var layout = AttachCore(game, manifestPath);
+        var resolver = new Il2CppResolver(game);
+        foreach (var cls in layout.Classes.Values)
+        {
+            if (cls.StaticFieldNames.Count > 0)
+            {
+                cls.AttachApi(resolver);
+            }
+        }
+        return layout;
+    }
+
+    /// <summary>Pure-read attach: manifest + validation only. No allocations, no threads.</summary>
+    public static GameLayout AttachReadOnly(GameProcess game, string manifestPath)
+    {
+        return AttachCore(game, manifestPath);
+    }
+
+    private static GameLayout AttachCore(GameProcess game, string manifestPath)
     {
         var manifest = ManifestLoader.Load(manifestPath);
         ManifestLoader.ValidateAgainstProcess(game, manifest);
-        var resolver = new Il2CppResolver(game);
 
         var classes = new Dictionary<string, ClassLayout>();
         foreach (var (name, entry) in manifest.Classes)
@@ -105,7 +123,7 @@ public sealed class GameLayout
                 f => f.Name,
                 f => new ClassLayout.Field(f.Offset, f.IsStatic),
                 StringComparer.Ordinal);
-            var layout = new ClassLayout
+            classes[name] = new ClassLayout
             {
                 Name = name,
                 Image = entry.Image,
@@ -113,11 +131,6 @@ public sealed class GameLayout
                 IsValueType = entry.IsValueType,
                 Fields = fields,
             };
-            if (fields.Any(f => f.Value.IsStatic))
-            {
-                layout.AttachApi(resolver);
-            }
-            classes[name] = layout;
         }
 
         return new GameLayout { Manifest = manifest, Classes = classes };
