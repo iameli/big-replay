@@ -1,4 +1,4 @@
-# Big Walk Replay
+# Big Replay
 
 External replay recorder + viewer for Big Walk (House House / Panic, Unity 6000.3.17f1, IL2CPP).
 No mods, no loader: the recorder opens the running game on the host machine with read-only
@@ -9,8 +9,8 @@ access, validates an offline field manifest, then samples positions and state en
 
 - `src/Replay.Format/` — replay file model + serializer + static game data (towers, gourd names).
 - `src/GameAccess/` — read-only process access, manifest-backed memory readers, game model.
-- `src/BigWalkReplay.Recorder/` — CLI + shared capture loop: sample at N Hz, write replay file.
-- `src/BigWalkReplay.Desktop/` — native Windows GUI: watch for the game and record automatically.
+- `src/BigReplay.Recorder/` — CLI + shared capture loop: sample at N Hz, write replay file.
+- `src/BigReplay.Desktop/` — native Windows GUI: watch for the game and record automatically.
 - `schemas/` — JSON Schema for replay files (the contract the web front-end validates against).
 - `web/viewer/` — static replay viewer with the island image, playback, and map calibration.
 - `docs/` — format spec + the read-only/no-writes trust story.
@@ -28,8 +28,9 @@ Work in progress: read-only recorder with an automatic desktop UI + map-backed r
 
 ## Automatic recorder (Windows)
 
-Extract the desktop release and double-click **BigReplay.exe**. Keep the bundled
-`manifest.json` beside it. No console or command-line arguments are needed.
+[Download Big Replay for Windows x64](https://github.com/iameli/big-replay/releases/latest/download/BigReplay-win-x64.zip).
+Extract the ZIP and double-click **BigReplay.exe**. Keep the bundled `manifest.json`
+beside it. No console, .NET installation, or command-line arguments are needed.
 
 - It watches for Big Walk every two seconds, including when launched before the game.
 - Once connected, it waits for players and captures at **10 Hz**.
@@ -40,6 +41,9 @@ Extract the desktop release and double-click **BigReplay.exe**. Keep the bundled
 - Closing the window finishes and saves; leave it open or minimized during a run.
 - **Open recordings folder** opens the output folder in Explorer.
 - If the game exits, the replay is finished and the app watches for the next launch.
+- When a recorded walk drops to **zero players**, its replay is finished automatically.
+  The app waits for players again and records the next walk in a new file, even if
+  Big Walk stays open. Losing some players while others remain does not split.
 - A missing/incompatible manifest or capture/save failure is shown in the window.
   Fix the problem and click **Resume recording**. Game startup/access failures retry
   automatically. Only one desktop instance runs per Windows login.
@@ -50,22 +54,23 @@ Sessions with no player samples leave no replay. On a capture/save error, any pa
 file is retained for investigation; it may not be playable. Forced termination,
 Windows shutdown, or power loss can also leave an unfinished file.
 
-**Current boundary:** one file per game process attachment (or Pause/Resume).
-Ending a walk and starting another **without closing Big Walk** still uses the same
-file. In-process walk/session splitting is intentionally deferred.
+**Split boundary:** the first zero-player sample after players have been recorded.
+There is no grace period: even a brief observed drop to zero splits the file. The
+final zero-player frame and its player-left/run-ended events remain in the old
+replay. Waiting in menus before any players appear does not create empty replays.
 
 ### Run or package from source
 
 From the repository root:
 
 ```powershell
-dotnet run --project src/BigWalkReplay.Desktop
+dotnet run --project src/BigReplay.Desktop
 ```
 
 Build a self-contained Windows x64 release:
 
 ```powershell
-dotnet publish src/BigWalkReplay.Desktop -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist/BigReplay
+dotnet publish src/BigReplay.Desktop -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist/BigReplay
 Compress-Archive -Path dist/BigReplay/* -DestinationPath dist/BigReplay-win-x64.zip -Force
 ```
 
@@ -75,11 +80,23 @@ manifest must match the installed game build; see [the trust notes](docs/trust.m
 The CLI remains available:
 
 ```powershell
-dotnet run --project src/BigWalkReplay.Recorder -- record manifest.json --out my-walk.replay.json.gz
+dotnet run --project src/BigReplay.Recorder -- record manifest.json --out my-walk.replay.json.gz
 ```
 
-Ctrl+C finishes the replay; game process exit now also finishes it. Existing output
-files are never overwritten.
+Ctrl+C, game process exit, or a recorded walk dropping to zero players finishes the
+CLI's single output file. Use the desktop app to keep watching and automatically
+record subsequent walks. Existing output files are never overwritten.
+
+### Automated releases
+
+Pushes to `next` run [Release Big Replay](https://github.com/iameli/big-replay/actions/workflows/release.yml):
+build the solution on Windows with .NET 10, publish the self-contained x64 app, and
+attach `BigReplay-win-x64.zip` to a new commit-tagged GitHub release marked **latest**.
+The download link above always selects that latest release.
+
+New pushes cancel superseded builds; only the current `next` commit is published.
+The workflow can also be run manually from the Actions page with `next` selected.
+It uses GitHub's built-in token; no separate release secret is required.
 
 ## Replay map
 

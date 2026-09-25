@@ -6,13 +6,13 @@ using LibCpp2IL;
 using LibCpp2IL.BinaryStructures;
 using LibCpp2IL.Metadata;
 
-namespace BigWalkReplay.ManifestGen;
+namespace BigReplay.ManifestGen;
 
 /// <summary>
 /// Generates the per-build manifest the recorder needs: instance field offsets, per-class identity
 /// (namespace, type index), ordered static-field lists with aligned block offsets, and binary RVAs.
 ///
-///   dotnet run --project src/BigWalkReplay.ManifestGen -- <gameFolder> [out.json]
+///   dotnet run --project src/BigReplay.ManifestGen -- <gameFolder> [out.json]
 /// </summary>
 internal static class Program
 {
@@ -43,7 +43,7 @@ internal static class Program
     {
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("usage: BigWalkReplay.ManifestGen <gameFolder> [out.json]");
+            Console.Error.WriteLine("usage: BigReplay.ManifestGen <gameFolder> [out.json]");
             return 1;
         }
         string gameFolder = args[0];

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using GameAccess;
 using Replay.Format;
 
-namespace BigWalkReplay.Recorder;
+namespace BigReplay.Recorder;
 
 public readonly record struct RecordingStatus(double ElapsedSeconds, int Players, long Frames);
 public readonly record struct RecordingResult(string? Path, long Frames);
@@ -129,13 +129,13 @@ public static class RecordingSession
                 }
                 prevFilled = monuments.Where(m => m.Filled).Select(m => m.HomeName).ToHashSet();
 
-                if (active && !serverWasActive)
-                {
-                    events.Add(new ReplayEvent { Time = t, Type = "run-started" });
-                }
-                else if (!active && serverWasActive)
+                if (players.Count == 0 || (!active && serverWasActive))
                 {
                     events.Add(new ReplayEvent { Time = t, Type = "run-ended" });
+                }
+                else if (active && !serverWasActive)
+                {
+                    events.Add(new ReplayEvent { Time = t, Type = "run-started" });
                 }
                 serverWasActive = active;
 
@@ -170,6 +170,9 @@ public static class RecordingSession
                     Monuments = monuments,
                 });
                 frames++;
+                // No header is written until players arrive, so idle menus never split.
+                // Keep the final empty-player frame and its leave/end events in this replay.
+                if (players.Count == 0) break;
             }
         }
         finally

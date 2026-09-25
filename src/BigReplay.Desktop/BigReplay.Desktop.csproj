@@ -5,10 +5,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <PlatformTarget>x64</PlatformTarget>
     <AssemblyName>BigReplay</AssemblyName>
-    <RootNamespace>BigWalkReplay.Desktop</RootNamespace>
+    <RootNamespace>BigReplay.Desktop</RootNamespace>
+    <Product>Big Replay</Product>
+    <AssemblyTitle>Big Replay</AssemblyTitle>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\BigWalkReplay.Recorder\BigWalkReplay.Recorder.csproj" />
+    <ProjectReference Include="..\BigReplay.Recorder\BigReplay.Recorder.csproj" />
     <Content Include="..\..\manifest.json" Link="manifest.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

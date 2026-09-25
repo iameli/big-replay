@@ -1,6 +1,6 @@
 namespace GameAccess;
 
-/// <summary>Per-class manifest entry generated offline (BigWalkReplay.ManifestGen).</summary>
+/// <summary>Per-class manifest entry generated offline (BigReplay.ManifestGen).</summary>
 public sealed class ManifestData
 {
     public int FormatVersion { get; set; }

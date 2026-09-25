@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.invalid/big-walk-replay/replay-v1.schema.json",
-  "title": "Big Walk replay file (v1)",
+  "$id": "https://raw.githubusercontent.com/iameli/big-replay/next/schemas/replay-v1.schema.json",
+  "title": "Big Replay file (v1)",
   "description": "Gzip-compressed JSON produced by the recorder. Header + frames + events.",
   "type": "object",
   "required": ["header", "frames", "events"],

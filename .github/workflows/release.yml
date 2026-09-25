@@ -1,0 +1,69 @@
+name: Release Big Replay
+
+on:
+  push:
+    branches: [next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: big-replay-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/next'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build solution
+        run: dotnet build BigReplay.slnx -c Release
+
+      - name: Publish Windows x64 desktop
+        run: dotnet publish src/BigReplay.Desktop/BigReplay.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist/BigReplay
+
+      - name: Package executable and manifest
+        run: |
+          foreach ($file in @('BigReplay.exe', 'manifest.json')) {
+            if (-not (Test-Path "dist/BigReplay/$file" -PathType Leaf)) {
+              throw "Published release is missing $file"
+            }
+          }
+          Compress-Archive -Path dist/BigReplay/* -DestinationPath dist/BigReplay-win-x64.zip -Force
+
+      - name: Publish latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $head = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/heads/next" --jq '.object.sha'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the latest next commit' }
+          if ($head -ne $env:GITHUB_SHA) {
+            Write-Output 'A newer commit is on next; leaving the latest release unchanged.'
+            exit 0
+          }
+          $tag = "next-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $notes = @'
+          Download and extract **BigReplay-win-x64.zip**, then run **BigReplay.exe**. Windows x64; no .NET installation is needed.
+
+          Run on the **Big Walk host machine**, as the same Windows user as the game. Keep the bundled **manifest.json** beside the executable; it must match the installed game build.
+
+          Recordings are saved to **Documents/BigReplay**.
+          '@
+          gh release create $tag dist/BigReplay-win-x64.zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'Big Replay' --notes $notes --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

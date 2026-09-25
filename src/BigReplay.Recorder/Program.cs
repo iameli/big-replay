@@ -1,10 +1,10 @@
 using GameAccess;
 using Replay.Format;
 
-namespace BigWalkReplay.Recorder;
+namespace BigReplay.Recorder;
 
 /// <summary>
-/// Big Walk replay recorder. Pure reads from attach to exit: no allocations in the game,
+/// Big Replay recorder for Big Walk. Pure reads from attach to exit: no allocations in the game,
 /// no writes, no threads, no injection. Field layout comes from the offline manifest.
 ///
 ///   probe   — attach, load manifest, print one live sample (validation)
@@ -146,7 +146,7 @@ internal static class Program
         }
         rate = Math.Clamp(rate, 1, 60);
 
-        outPath ??= $"bigwalk-replay-{DateTime.UtcNow:yyyyMMdd-HHmmss}.replay.json.gz";
+        outPath ??= $"bigreplay-{DateTime.UtcNow:yyyyMMdd-HHmmss}.replay.json.gz";
 
         using var game = GameProcess.Attach();
         Console.WriteLine($"attached: GameAssembly.dll base=0x{game.GameAssemblyBase:X}");

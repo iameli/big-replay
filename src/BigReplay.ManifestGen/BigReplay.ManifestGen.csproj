@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <RootNamespace>BigWalkReplay.ManifestGen</RootNamespace>
+    <RootNamespace>BigReplay.ManifestGen</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!-- vendored LibCpp2IL is MIT (see LibCpp2IL/LICENSE-MIT); its code is not held to our warning bar -->

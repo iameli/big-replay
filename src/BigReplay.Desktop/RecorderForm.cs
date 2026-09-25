@@ -1,9 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using BigWalkReplay.Recorder;
+using BigReplay.Recorder;
 using GameAccess;
 
-namespace BigWalkReplay.Desktop;
+namespace BigReplay.Desktop;
 
 internal sealed class RecorderForm : Form
 {
@@ -22,7 +22,7 @@ internal sealed class RecorderForm : Form
 
     public RecorderForm()
     {
-        Text = "BigReplay";
+        Text = "Big Replay";
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -36,7 +36,7 @@ internal sealed class RecorderForm : Form
             Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(28), ColumnCount = 1, RowCount = 10,
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var title = new Label { Text = "BigReplay", AutoSize = true, Font = new Font(Font.FontFamily, 24, FontStyle.Bold) };
+        var title = new Label { Text = "Big Replay", AutoSize = true, Font = new Font(Font.FontFamily, 24, FontStyle.Bold) };
         var subtitle = new Label { Text = "Automatic Big Walk replay recorder", AutoSize = true, Margin = new Padding(0, 0, 0, 24) };
         _status.Font = new Font(Font.FontFamily, 16, FontStyle.Bold);
         _detail.Margin = new Padding(0, 8, 0, 16);
@@ -148,7 +148,7 @@ internal sealed class RecorderForm : Form
                     using (game)
                     {
                         string path = Path.Combine(_outputDirectory,
-                            $"bigwalk-{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid().ToString("N")[..8]}.replay.json.gz");
+                            $"bigreplay-{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid().ToString("N")[..8]}.replay.json.gz");
                         _file.Text = $"Current: {Path.GetFileName(path)}";
                         try
                         {

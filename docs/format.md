@@ -61,7 +61,9 @@ not in the replay format. See the README for alignment steps and accuracy limits
 
 ## Event types
 
-- `run-started` / `run-ended` — Mirror server active transitions (host lobby open/close)
+- `run-started` / `run-ended` — recording start and Mirror server active transitions
+  (host lobby open/close); `run-ended` also marks the first zero-player frame after
+  players were recorded, which finishes that replay.
 - `player-joined` / `player-left` — netId set changes
 - `death` — corpse count increase
 - `gourd-pinned` — a monument slot becomes filled (detail = saveableHomeName)

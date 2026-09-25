@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BigReplay.Desktop/BigReplay.Desktop.csproj" />
+    <Project Path="src/BigReplay.ManifestGen/BigReplay.ManifestGen.csproj" />
+    <Project Path="src/BigReplay.Recorder/BigReplay.Recorder.csproj" />
+    <Project Path="src/GameAccess/GameAccess.csproj" />
+    <Project Path="src/Replay.Format/Replay.Format.csproj" />
+  </Folder>
+</Solution>

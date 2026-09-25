@@ -1,4 +1,4 @@
-# Big Walk Replay — Plan & Handoff
+# Big Replay — Plan & Handoff
 
 Status: **working end-to-end, verified live.** A no-mod recorder captures Big Walk runs
 externally and a web viewer plays them back. This file orients the next agent: where we are,
@@ -84,11 +84,12 @@ game process ──attach (read-only)──► GameProcess      # OpenProcess(VM
 ### Repo layout
 
 ```
-src/BigWalkReplay.ManifestGen/   # offline manifest (vendored MIT LibCpp2IL under LibCpp2IL/)
+src/BigReplay.ManifestGen/       # offline manifest (vendored MIT LibCpp2IL under LibCpp2IL/)
 src/GameAccess/                  # GameProcess (read-only handle), ManifestData/Loader,
                                  #   GameLayout, ClassLayout, ClassDiscoveryContext,
                                  #   MemoryRegions, GameStateReader, UnityInternals
-src/BigWalkReplay.Recorder/      # CLI: probe / probe-ro / record (-r rate, -d duration, -o out)
+src/BigReplay.Recorder/          # CLI: probe / probe-ro / record (-r rate, -d duration, -o out)
+src/BigReplay.Desktop/           # automatic Windows recorder UI
 src/Replay.Format/               # schema types + ReplayWriter (gzip JSON) + BigWalkData
 src/UharaProbe/                  # NET48 experiment against the genuine uhhara component (unused)
 web/viewer/index.html            # the viewer
@@ -103,11 +104,11 @@ manifest.json                    # generated for build 24982892 (1.5.1 260827153
 
 ```powershell
 # generate manifest for a pinned game build (one time per build)
-dotnet run --project src\BigWalkReplay.ManifestGen -- "C:\Program Files (x86)\Steam\steamapps\common\Big Walk" manifest.json
+dotnet run --project src\BigReplay.ManifestGen -- "C:\Program Files (x86)\Steam\steamapps\common\Big Walk" manifest.json
 # probe a running game
-dotnet run --project src\BigWalkReplay.Recorder -- probe manifest.json
+dotnet run --project src\BigReplay.Recorder -- probe manifest.json
 # record (host machine; Ctrl+C or -d N seconds)
-dotnet run --project src\BigWalkReplay.Recorder -- record -d 120 -o run.replay.json.gz manifest.json
+dotnet run --project src\BigReplay.Recorder -- record -d 120 -o run.replay.json.gz manifest.json
 # play back: open web\viewer\index.html and drop run.replay.json.gz (or ...?replay=/path.json.gz)
 ```
 
