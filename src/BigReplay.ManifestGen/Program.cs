@@ -20,7 +20,7 @@ internal static class Program
     private static readonly (string Image, string Class, string[] Fields)[] Wanted =
     [
         ("Assembly-CSharp.dll", "PlayerCharacter", ["allPlayerCharacters", "mover", "playerNetworking", "registry", "sleeper", "bypassUpdate"]),
-        ("Assembly-CSharp.dll", "PlayerNetworking", ["isPending", "username", "identifier"]),
+        ("Assembly-CSharp.dll", "PlayerNetworking", ["isPending", "<username>k__BackingField", "<identifier>k__BackingField", "username", "identifier"]),
         ("Assembly-CSharp.dll", "PropHome", ["allPropHomes", "onPin", "pinGroup", "pinnedProp", "saveableHomeName", "parentCharacter"]),
         ("Assembly-CSharp.dll", "Prop", ["allProps", "saveablePropName", "exclusiveHolder"]),
         ("Assembly-CSharp.dll", "Corpse", ["allCorpses"]),

@@ -464,7 +464,7 @@ function render() {
     ctx.lineWidth = 4;
     ctx.strokeStyle = "#10131a";
     ctx.fillStyle = p.drowsy ? "#ffd447" : color;
-    const label = `#${p.netId}${p.drowsy ? " · sleepy" : ""}`;
+    const label = `${p.name || ("#" + p.netId)}${p.drowsy ? " · sleepy" : ""}`;
     ctx.strokeText(label, sx + 17, sy - 8);
     ctx.fillText(label, sx + 17, sy - 8);
   }

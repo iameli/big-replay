@@ -99,15 +99,22 @@ public sealed class GameStateReader
         return pn != 0 && _g.ReadBool(pn + (uint)Off("PlayerNetworking", "isPending"));
     }
 
+    // RUNTIME-VERIFIED offsets (live 2026 session): Mirror syncvar backing fields sit +0x10 past
+    // the declared metadata layout ('username' declared @0xF0 actually holds the Steam64 ID string;
+    // the real username string object is at +0x100; identifier at +0x118).
+    private const int PnUsername = 0x100;
+    private const int PnIdentifier = 0x118;
+
     /// <summary>Read a managed .NET string (UTF-16; length @+0x10, chars @+0x14).</summary>
     private string? ReadUsername(long playerChar)
     {
         long pn = _g.ReadPtr(playerChar + (uint)Off("PlayerCharacter", "playerNetworking"));
-        long strObj = pn != 0 ? _g.ReadPtr(pn + (uint)Off("PlayerNetworking", "username")) : 0;
-        if (strObj == 0)
-        {
-            return null;
-        }
+        long strObj = pn != 0 ? _g.ReadPtr(pn + PnUsername) : 0;
+        return strObj == 0 ? null : ReadManagedString(strObj);
+    }
+
+    private string? ReadManagedString(long strObj)
+    {
         int len = _g.ReadInt32(strObj + 0x10);
         if (len is <= 0 or > 256)
         {
