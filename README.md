@@ -1,9 +1,6 @@
 # <img src="logo.svg" height="40" alt=""> Big Replay
 
-External replay recorder + viewer for Big Walk (House House / Panic, Unity 6000.3.17f1, IL2CPP).
-No mods, no loader: the recorder opens the running game on the host machine with read-only
-access, validates an offline field manifest, then samples positions and state entirely via
-`ReadProcessMemory`. Produces a replay file that a static web viewer plays back.
+Big Replay is a tool for recording character positions in Big Walk and playing them back afterward. It runs alongside the game and pulls data by scraping memory - it's not a mod and doesn't change anything in the running game. To use it, download BigReplay-Setup.exe from GitHub and start the game. Afterward, your replays will be in a BigReplay folder in Documents.
 
 ## Layout
 
@@ -168,6 +165,8 @@ Chosen files are read locally in your browser, not uploaded.
 [Try the bundled sample](https://big-replay.iame.li/?replay=sample.replay.json.gz).
 The **Download Big Replay** button in the top-right of the controls opens the latest
 release in a new tab without interrupting the viewer.
+Click the **Big Replay** title or its info icon to open **About**. Close the dialog
+with **Close**, Escape, or a click outside it.
 
 For offline use, open the root `index.html` from a checkout. Keep `map-view.js` and
 `bigmap.jpeg` beside it. No build or package install is needed. Alternatively,

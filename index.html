@@ -30,8 +30,15 @@
   #viewer-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; background: #151a23; }
   #sidebar h1 { display: flex; align-items: center; gap: 6px; font-size: 14px; margin: 0; color: #c9d6e8; white-space: nowrap; }
   #viewer-logo { object-fit: contain; }
+  #about-open { display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
   #download { flex-shrink: 0; text-decoration: none; white-space: nowrap; }
-  #download:focus-visible { outline: 2px solid #56b4ff; outline-offset: 2px; }
+  #download:focus-visible, #about-open:focus-visible, #about-dialog .btn:focus-visible { outline: 2px solid #56b4ff; outline-offset: 2px; }
+  #about-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 24px; border: 1px solid #526675; border-radius: 8px; background: #151a23; color: #dfe5ee; }
+  #about-dialog::backdrop { background: #0009; }
+  #about-dialog h2 { margin: 0 0 12px; font-size: 20px; }
+  #about-dialog p { margin: 0 0 20px; line-height: 1.6; }
+  #about-dialog a { color: #56b4ff; }
+  #about-dialog form { display: flex; justify-content: flex-end; }
   #meta { font-size: 11px; color: #7d8ba0; margin: 0 12px 8px; }
   .sidebar-section { flex: none; border-top: 1px solid #313c52; }
   .sidebar-section > summary { padding: 10px 12px; font-weight: 600; cursor: pointer; user-select: none; }
@@ -107,7 +114,10 @@
 
 <div id="sidebar">
   <header id="viewer-header">
-    <h1><img id="viewer-logo" src="logo.svg" width="22" height="32" alt="">Big Replay</h1>
+    <h1><button id="about-open" type="button" aria-label="About Big Replay" title="About Big Replay">
+      <img id="viewer-logo" src="logo.svg" width="22" height="32" alt="">Big Replay
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7v4M8 4.5v.5"/></svg>
+    </button></h1>
     <a id="download" class="btn" href="https://github.com/iameli/big-replay/releases/latest" target="_blank" rel="noopener noreferrer">Download Big Replay</a>
   </header>
   <div id="meta"></div>
@@ -215,9 +225,16 @@
   </details>
 </div>
 
+<dialog id="about-dialog" aria-labelledby="about-title" aria-describedby="about-description" closedby="any">
+  <h2 id="about-title">About Big Replay</h2>
+  <p id="about-description">Big Replay is a tool for recording character positions in Big Walk and playing them back afterward. It runs alongside the game and pulls data by scraping memory - it's not a mod and doesn't change anything in the running game. To use it, download <a href="https://github.com/iameli/big-replay/releases/latest/download/BigReplay-Setup.exe" target="_blank" rel="noopener noreferrer">BigReplay-Setup.exe</a> from GitHub and start the game. Afterward, your replays will be in a BigReplay folder in Documents.</p>
+  <form method="dialog"><button id="about-close" class="btn" type="submit" autofocus>Close</button></form>
+</dialog>
+
 <script src="map-view.js"></script>
 <script>
 "use strict";
+document.getElementById("about-open").addEventListener("click", () => document.getElementById("about-dialog").showModal());
 const TOWERS = {
   "Tutorial": [150,151,152,153], "Red": [100,101,102,103,104], "Green": [110,111,112,113,114],
   "Blue": [120,121,122,123,124], "Yellow": [130,131,132,133,134], "Final": [140,141,142,143,144,145],
