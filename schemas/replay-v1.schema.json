@@ -57,7 +57,7 @@
       "required": ["netId"],
       "properties": {
         "netId": { "type": "integer" },
-        "x": { "type": "number" },
+        "name": { "type": ["string", "null"] },
         "y": { "type": "number" },
         "z": { "type": "number" },
         "yaw": { "type": "number" },
