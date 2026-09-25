@@ -31,9 +31,10 @@ function solveCalibration(points) {
 }
 
 class MapView {
-  constructor(canvas, redraw, pause) {
+  constructor(canvas, redraw, pause, playerColor) {
     this.canvas = canvas;
     this.redraw = redraw;
+    this.playerColor = playerColor;
     this.points = [];
     this.transform = DEFAULT_MAP_TRANSFORM;
     this.pending = null;
@@ -160,7 +161,10 @@ class MapView {
         if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
         let route = routes.get(p.netId);
         if (!route) {
-          route = { path: new Path2D(), lastFrame: -2 };
+          route = {
+            netId: p.netId, path: new Path2D(), lastFrame: -2, samples: [],
+            history: new Path2D(), historyEnd: 0,
+          };
           routes.set(p.netId, route);
         }
         if (route.lastFrame === index - 1) route.path.lineTo(p.x, p.z);
@@ -169,6 +173,7 @@ class MapView {
           route.path.lineTo(p.x, p.z);
         }
         route.lastFrame = index;
+        route.samples.push([index, p.x, p.z]);
         minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
         minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
       }
@@ -304,29 +309,81 @@ class MapView {
     return [(u * t.yz - v * t.xz) / det, (v * t.xx - u * t.yx) / det];
   }
 
+  routeMatrix() {
+    const { scale, ox, oy } = this.viewport(), t = this.transform;
+    return new DOMMatrix([
+      scale * t.xx, scale * t.yx, scale * t.xz, scale * t.yz,
+      ox + scale * t.tx, oy + scale * t.ty,
+    ]);
+  }
+
+  strokeRoute(ctx, route, matrix, color) {
+    const path = new Path2D();
+    path.addPath(route, matrix);
+    ctx.save();
+    ctx.lineJoin = ctx.lineCap = "round";
+    ctx.strokeStyle = "#10131a";
+    ctx.lineWidth = 5;
+    ctx.stroke(path);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.stroke(path);
+    ctx.restore();
+  }
+
+  appendSamples(path, samples, start, end) {
+    for (let i = start; i < end; i++) {
+      const [frame, x, z] = samples[i];
+      if (i > 0 && samples[i - 1][0] === frame - 1) path.lineTo(x, z);
+      else { path.moveTo(x, z); path.lineTo(x, z); }
+    }
+  }
+
+  drawTrails(ctx, frameIndex, mode) {
+    if (mode === "off" || this.showRoute) return;
+    const matrix = this.routeMatrix();
+    for (const route of this.routes) {
+      const samples = route.samples;
+      // Find the current prefix without scanning the entire recording each render.
+      let lo = 0, hi = samples.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (samples[mid][0] <= frameIndex) lo = mid + 1;
+        else hi = mid;
+      }
+      const end = lo;
+      let path;
+      if (mode === "persistent") {
+        if (end < route.historyEnd) {
+          route.history = new Path2D();
+          route.historyEnd = 0;
+        }
+        this.appendSamples(route.history, samples, route.historyEnd, end);
+        route.historyEnd = end;
+        path = route.history;
+      } else {
+        let start = end;
+        while (start > 0 && samples[start - 1][0] >= frameIndex - 40) start--;
+        path = new Path2D();
+        if (start < end) {
+          path.moveTo(samples[start][1], samples[start][2]);
+          this.appendSamples(path, samples, start, end);
+        }
+      }
+      this.strokeRoute(ctx, path, matrix, this.playerColor(route.netId));
+    }
+  }
+
   draw(ctx) {
     const { scale, ox, oy } = this.viewport();
     ctx.fillStyle = "#172e3a";
     ctx.fillRect(0, 0, this.canvas.clientWidth, this.canvas.clientHeight);
     if (this.ready) ctx.drawImage(this.image, ox, oy, MAP_SIZE * scale, MAP_SIZE * scale);
     if (this.transform && this.showRoute) {
-      const t = this.transform;
-      // Transform the cached paths, not stroke widths: the overlay stays thin at every zoom.
-      const matrix = new DOMMatrix([
-        scale * t.xx, scale * t.yx, scale * t.xz, scale * t.yz,
-        ox + scale * t.tx, oy + scale * t.ty,
-      ]);
-      ctx.save();
-      ctx.strokeStyle = "#ff70da";
-      ctx.lineWidth = 1.5;
-      ctx.lineJoin = ctx.lineCap = "round";
-      ctx.globalAlpha = 0.85;
+      const matrix = this.routeMatrix();
       for (const route of this.routes) {
-        const path = new Path2D();
-        path.addPath(route.path, matrix);
-        ctx.stroke(path);
+        this.strokeRoute(ctx, route.path, matrix, this.editing ? "#ff70da" : this.playerColor(route.netId));
       }
-      ctx.restore();
     }
     if (this.editing) return;
     for (let i = 0; i < this.points.length; i++) {
@@ -408,7 +465,9 @@ class MapView {
     canvas.addEventListener("wheel", e => {
       e.preventDefault();
       const [x, y] = local(e), [u, v] = this.screenToImage(x, y);
-      this.zoom = Math.min(16, Math.max(1, this.zoom * Math.exp(-e.deltaY * 0.001)));
+      // Chromium reports trackpad pinch as small Ctrl+wheel deltas.
+      const sensitivity = e.ctrlKey ? 0.01 : 0.001;
+      this.zoom = Math.min(16, Math.max(1, this.zoom * Math.exp(-e.deltaY * sensitivity)));
       const [nx, ny] = this.imageToScreen(u, v);
       this.panX += x - nx; this.panY += y - ny;
       this.redraw();

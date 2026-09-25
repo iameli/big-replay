@@ -32,9 +32,34 @@ keep that relative layout intact. No build or package install is needed.
 Alternatively, serve the **repository root** with a static HTTP server and open
 `/web/viewer/index.html?replay=../../run1.replay.json.gz`.
 
-Drag the map to pan, scroll to zoom around the cursor, and use **Fit map** to reset
-the view. Playback starts paused; the timeline selects exact recorded frames.
-Playback and the clock use recorded timestamps rather than assuming uniform samples.
+Drag the map to pan, scroll or pinch to zoom around the cursor, and use **Fit map**
+to reset the view. Trackpad pinch has higher sensitivity than ordinary scrolling.
+Playback starts paused; the timeline selects exact recorded frames. Playback and
+the clock use recorded timestamps rather than assuming uniform samples.
+
+### Markers, trails, and player colors
+
+Players use person-shaped vector icons; gourds use gourd-shaped icons. Larger
+markers have light and dark outlines so they remain legible over the terrain.
+Carried gourds appear as a small gourd beside the player; sleepy players are labeled.
+
+The **Trails** dropdown offers **Off**, **Recent** (the last 40 frame intervals),
+and **Persistent · start to now**. Persistent trails retain each player's history
+up to the current replay frame, including players who have left. Scrubbing backward
+removes future movement; missing player samples break the line rather than drawing
+a jump. The trail mode is remembered in this browser. **Show full player routes**
+under alignment is separate: it deliberately includes future positions as well.
+
+**Player colors** lists every player in the recording, even before they join or
+after they leave. The 12-color palette is Sky, Coral, Mint, Gold, Violet, Cyan,
+Orange, Pink, Lime, Ivory, Rose, and Slate. Players receive distinct initial colors
+for a 12-player recording. Selecting another player's color swaps their assignments.
+Icons, labels, history trails, and full routes outside alignment mode all use the
+same player color.
+
+Color choices are stored in this browser by netId, not runner identity. Reassign
+them with the dropdowns when roles or player IDs change between recordings.
+These display preferences do not modify replay files.
 
 ### Aligning world coordinates
 
