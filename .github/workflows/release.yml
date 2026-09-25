@@ -99,9 +99,9 @@ jobs:
 
       - name: Stage viewer site
         run: |
-          mkdir -p _site/web
+          mkdir -p _site/web/viewer
           cp index.html bigmap.jpeg _site/
-          cp -R web/viewer _site/web/
+          cp web/viewer/index.html web/viewer/map-view.js web/viewer/sample.replay.json.gz _site/web/viewer/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
