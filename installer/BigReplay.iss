@@ -21,6 +21,7 @@ AppMutex=Local\BigReplay.Desktop
 CloseApplications=no
 RestartApplications=no
 UninstallDisplayIcon={app}\BigReplay.exe
+SetupIconFile=..\favicon.ico
 OutputDir=..\dist
 OutputBaseFilename=BigReplay-Setup
 VersionInfoVersion={#AppVersion}
@@ -28,6 +29,8 @@ VersionInfoDescription=Big Replay Installer
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+WizardImageFile=..\icons\installer-panel.png
+WizardSmallImageFile=..\icons\icon-192.png
 UsePreviousTasks=yes
 
 [Tasks]

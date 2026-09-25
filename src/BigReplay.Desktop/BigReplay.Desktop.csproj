@@ -8,9 +8,11 @@
     <RootNamespace>BigReplay.Desktop</RootNamespace>
     <Product>Big Replay</Product>
     <AssemblyTitle>Big Replay</AssemblyTitle>
+    <ApplicationIcon>..\..\favicon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\BigReplay.Recorder\BigReplay.Recorder.csproj" />
     <Content Include="..\..\manifest.json" Link="manifest.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="..\..\favicon.ico" LogicalName="BigReplay.Desktop.AppIcon.ico" />
   </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-# Big Replay
+# <img src="logo.svg" height="40" alt=""> Big Replay
 
 External replay recorder + viewer for Big Walk (House House / Panic, Unity 6000.3.17f1, IL2CPP).
 No mods, no loader: the recorder opens the running game on the host machine with read-only
@@ -124,9 +124,9 @@ GitHub release marked **latest**. The installer is built with the Windows runner
 Inno Setup compiler. The download links above always select that latest release.
 
 The same workflow deploys the viewer to [big-replay.iame.li](https://big-replay.iame.li/)
-in a separate GitHub Pages job. It publishes only `index.html`, `map-view.js`,
-`bigmap.jpeg`, the synthetic `sample.replay.json.gz`, and `CNAME` at the site root;
-other recordings in the repository are not included. Repository Pages settings use
+in a separate GitHub Pages job. It publishes the root viewer, map, synthetic
+`sample.replay.json.gz`, `CNAME`, and the logo/browser icon assets listed in the
+workflow; other recordings in the repository are not included. Repository Pages settings use
 **GitHub Actions** as the build source, with the `github-pages` environment allowing
 deployments from `next`.
 
@@ -136,6 +136,26 @@ and GitHub Pages is configured for that custom domain with HTTPS enforced.
 New pushes cancel superseded builds; only the current `next` commit is published.
 The workflow can also be run manually from the Actions page with `next` selected.
 It uses GitHub's built-in token; no separate release secret is required.
+
+### Logo and icons
+
+`logo.svg` is the source artwork, used directly in the viewer and this README.
+`favicon.ico` contains ten sizes from 16 to 256 pixels and is shared by the browser
+fallback, Windows executable/window, installer, Start menu shortcut, and Installed
+apps entry. The recorder header and installer wizard also display the logo.
+The viewer supplies an SVG favicon, Apple touch icon, 192/512-pixel home-screen
+icons through `site.webmanifest`, and a logo for link previews.
+
+Generated icons are checked in; normal builds need no image tools. After changing
+`logo.svg`, regenerate them with [ImageMagick 7](https://imagemagick.org/script/download.php#windows):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/generate-icons.ps1
+# Or pass -MagickPath C:\path\to\magick.exe for a portable installation.
+```
+
+This preserves the artwork's proportions and transparent background, adding an
+opaque background only for the Apple touch icon and installer sidebar.
 
 ## Replay map
 

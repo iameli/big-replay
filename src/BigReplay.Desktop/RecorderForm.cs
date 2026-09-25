@@ -14,6 +14,8 @@ internal sealed class RecorderForm : Form
     private readonly Button _pause = new() { AutoSize = true, Text = "Pause recording", Padding = new Padding(12, 6, 12, 6) };
     private readonly Button _openFolder = new() { AutoSize = true, Text = "Open recordings folder", Padding = new Padding(12, 6, 12, 6) };
     private readonly TextBox _folder = new() { ReadOnly = true, Dock = DockStyle.Fill, TabStop = true };
+    private readonly Icon _appIcon = new(typeof(RecorderForm), "AppIcon.ico");
+    private readonly Bitmap _logoBitmap;
     private CancellationTokenSource? _stop;
     private Task _runTask = Task.CompletedTask;
     private string? _outputDirectory;
@@ -23,6 +25,16 @@ internal sealed class RecorderForm : Form
     public RecorderForm()
     {
         Text = "Big Replay";
+        Icon = _appIcon;
+        using (var logoIcon = new Icon(_appIcon, 128, 128))
+        {
+            _logoBitmap = logoIcon.ToBitmap();
+        }
+        Disposed += (_, _) =>
+        {
+            _logoBitmap.Dispose();
+            _appIcon.Dispose();
+        };
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -36,7 +48,17 @@ internal sealed class RecorderForm : Form
             Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(28), ColumnCount = 1, RowCount = 10,
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var title = new Label { Text = "Big Replay", AutoSize = true, Font = new Font(Font.FontFamily, 24, FontStyle.Bold) };
+        var brand = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = Padding.Empty };
+        brand.Controls.Add(new PictureBox
+        {
+            Image = _logoBitmap, Size = new Size(64, 64), SizeMode = PictureBoxSizeMode.Zoom,
+            Margin = new Padding(0, 0, 12, 0), TabStop = false,
+        });
+        brand.Controls.Add(new Label
+        {
+            Text = "Big Replay", AutoSize = true, Font = new Font(Font.FontFamily, 24, FontStyle.Bold),
+            Margin = new Padding(0, 8, 0, 0),
+        });
         var subtitle = new Label { Text = "Automatic Big Walk replay recorder", AutoSize = true, Margin = new Padding(0, 0, 0, 24) };
         _status.Font = new Font(Font.FontFamily, 16, FontStyle.Bold);
         _detail.Margin = new Padding(0, 8, 0, 16);
@@ -51,7 +73,7 @@ internal sealed class RecorderForm : Form
             Text = "Run this on the host's PC to capture all players.\nClosing this window finishes and saves the current replay.",
             AutoSize = true, ForeColor = Color.FromArgb(85, 92, 104),
         };
-        layout.Controls.Add(title);
+        layout.Controls.Add(brand);
         layout.Controls.Add(subtitle);
         layout.Controls.Add(_status);
         layout.Controls.Add(_detail);
