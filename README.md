@@ -189,9 +189,16 @@ or Space, to toggle it. Map alignment starts collapsed; the other sections start
 
 Players use person-shaped vector icons; gourds use the side-view gourd silhouette
 in both the map and legend. White inner and dark outer outlines keep them visible
-over the terrain, while state colors distinguish loose/locked, stashed, and pinned
-gourds. Carried gourds use the same silhouette beside the player; sleepy players
-are labeled.
+over the terrain. Gourds use their physical colors: red `#c64132` by default and
+purple `#8053ac` for SaveablePropName IDs **134, 142, 151, 152, 156, 158, 159**.
+This 1.5.1 mapping comes from the seven southernmost gourds in the reference
+recording after applying the bundled map alignment (`mapY = yx*x + yz*z + ty`,
+increasing southward), not from raw game X/Z coordinates.
+
+Colors are fixed by gourd ID, not recalculated from location or carrying/pinning
+state. Carried-gourd icons use the same color as the corresponding world gourd.
+Locked gourds remain slightly faded; sleepy players are labeled. Existing replays
+need no format changes. Review the ID mapping when supporting a new game build.
 
 The **Trails** dropdown offers **Off**, **Recent** (the last 40 frame intervals),
 and **Persistent · start to now**. Persistent trails retain each player's history
