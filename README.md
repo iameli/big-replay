@@ -38,9 +38,36 @@ Playback and the clock use recorded timestamps rather than assuming uniform samp
 
 ### Aligning world coordinates
 
-The JPEG has no georeferencing metadata, and the current real captures have empty
-landmark lists. The viewer deliberately does **not** stretch replay bounds over
-the image or show guessed marker positions.
+The viewer ships a default calibration manually aligned to the full train circuit
+on `bigmap.jpeg`, so replay markers appear immediately. Saved browser calibrations
+take precedence. You can refine the alignment or clear it to start from scratch;
+the viewer never treats replay bounds as a geographic calibration.
+
+#### Align a full route (for example, the train circuit)
+
+1. Load the recording and click **Adjust full route** (or **Align full route** if
+   calibration was cleared). A pink overlay shows every recorded player position
+   across the entire replay, independent of the timeline. It starts from the
+   current alignment; without one, its initial position is only a starting preview.
+2. **Drag** anywhere on the map to slide the route. **Shift-drag** pans the map;
+   scrolling zooms the view without changing the alignment.
+3. Adjust **Scale %** and **Rotate °** with the sliders or numeric fields.
+   Rotation has 0.1° precision and pivots around the route center. The offset fields
+   allow fine positioning in image pixels. Flip horizontal/vertical if needed.
+4. Under **Fine adjustment**, width, height, and shear can correct differences
+   that uniform scaling and rotation cannot. Check widely separated track bends
+   rather than fitting just one short section.
+5. Click **Lock alignment** to save the transform in this browser and restore
+   normal replay markers. **Cancel** discards the preview and restores the prior
+   alignment. **Adjust full route** reopens the saved alignment for refinement;
+   its controls start at neutral values relative to that alignment.
+
+**Show full player routes** keeps the entire route visible outside editing.
+During editing, current-frame markers are hidden so the track stays readable.
+The route includes all players; a single-player train recording is the clearest
+reference. Neither locking nor editing changes the recording.
+
+#### Alternatively, match three known positions
 
 1. Scrub to a position you recognize on the map. Under **Map alignment**, select
    the player, a recorded landmark, or a gourd at that frame.
@@ -58,11 +85,13 @@ Players, trails, gourds, and landmarks all use the same world → image → scre
 transform. Hovering reports image pixels and, once calibrated, world X/Z.
 The map is top-down: Y/height is not projected.
 
-References persist in browser local storage and apply to other replays using the
-same game world and this map image. They do not modify the replay. Storage may be
+The locked transform and any reference points persist in browser local storage
+and apply to other replays using the same game world and this map image. Existing
+three-reference calibrations remain supported. They do not modify the replay. Storage may be
 unavailable in private/file contexts; the UI reports a failed save. Keep the same
-origin when serving over HTTP. No geographically verified default calibration is
-bundled yet.
+origin when serving over HTTP. Missing or corrupt saved calibration falls back to
+the bundled train-track alignment. **Clear** deliberately keeps the viewer
+uncalibrated, including after reload, so you can place new references.
 
 Current real captures contain only 0/π yaw values, so the viewer omits facing
 arrows rather than presenting them as reliable headings.

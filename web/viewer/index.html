@@ -48,6 +48,16 @@
   #anchor-source { width: 100%; margin: 5px 0 8px; background: #232b3a; color: #dfe5ee; padding: 5px; }
   #anchor-list { list-style: none; padding: 0; overflow-wrap: anywhere; }
   #anchor-list li { margin: 6px 0; }
+  #route-editor { margin-top: 10px; }
+  .alignment-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .adjustment { display: grid; grid-template-columns: 68px 1fr 72px; gap: 6px; align-items: center; margin: 8px 0; }
+  .adjustment input { min-width: 0; width: 100%; }
+  .adjustment input[type=number], .fine-adjustments input { background: #232b3a; color: #dfe5ee; border: 1px solid #526675; padding: 4px; }
+  .fine-adjustments { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+  .fine-adjustments label { display: flex; flex-direction: column; gap: 3px; }
+  .fine-adjustments input { width: 100%; }
+  #route-editor details { margin: 10px 0; }
+  #reference-tools { margin-top: 12px; }
   button:disabled { opacity: .45; cursor: default; }
   @media (max-width: 650px) {
     body { flex-direction: column; }
@@ -93,14 +103,50 @@
   <section id="alignment">
     <h2>Map alignment</h2>
     <p id="alignment-status" role="status"></p>
-    <p>Choose a known recorded position, then place it on the image. Use three widely separated locations forming a triangle. X/Z is the ground plane; Y is height.</p>
+    <button class="btn" id="align-route" disabled>Align full route</button>
+    <p><label><input type="checkbox" id="show-route" disabled> Show full player routes</label></p>
+    <div id="route-editor" hidden>
+      <p>All recorded player positions are shown, regardless of the timeline. Drag to move the route; Shift-drag to pan the map. Scroll to zoom the view, not the route.</p>
+      <label class="adjustment">Scale %
+        <input id="route-scale-range" aria-label="Route scale slider" type="range" min="10" max="300" step="0.1" value="100">
+        <input id="route-scale" aria-label="Route scale percent" type="number" min="0.1" max="10000" step="0.1" value="100">
+      </label>
+      <label class="adjustment">Rotate °
+        <input id="route-angle-range" aria-label="Route rotation slider" type="range" min="-180" max="180" step="0.1" value="0">
+        <input id="route-angle" aria-label="Route rotation degrees" type="number" min="-180" max="180" step="0.1" value="0">
+      </label>
+      <div class="fine-adjustments">
+        <label>Horizontal offset (px)<input id="route-offset-x" type="number" step="0.01" value="0"></label>
+        <label>Vertical offset (px)<input id="route-offset-y" type="number" step="0.01" value="0"></label>
+      </div>
+      <div class="alignment-actions">
+        <label><input id="route-flip-x" type="checkbox"> Flip horizontal</label>
+        <label><input id="route-flip-y" type="checkbox"> Flip vertical</label>
+      </div>
+      <details>
+        <summary>Fine adjustment: stretch / shear</summary>
+        <div class="fine-adjustments">
+          <label>Width %<input id="route-width" type="number" min="1" max="10000" step="0.1" value="100"></label>
+          <label>Height %<input id="route-height" type="number" min="1" max="10000" step="0.1" value="100"></label>
+          <label>Horizontal shear %<input id="route-shear" type="number" min="-1000" max="1000" step="0.1" value="0"></label>
+        </div>
+      </details>
+      <p>Scale, stretch, and rotation pivot around the route center. This is an unsaved preview until you lock it.</p>
+      <div class="alignment-actions">
+        <button class="btn" id="lock-route">Lock alignment</button>
+        <button class="btn" id="cancel-route">Cancel</button>
+      </div>
+    </div>
+    <div id="reference-tools">
+    <p>Or match three known positions to the image. Use widely separated locations forming a triangle. X/Z is the ground plane; Y is height.</p>
     <label for="anchor-source">Reference at current frame</label>
     <select id="anchor-source"></select>
     <button class="btn" id="place-anchor">Place reference</button>
     <button class="btn" id="undo-anchor">Undo</button>
     <button class="btn" id="reset-alignment">Clear</button>
     <ol id="anchor-list"></ol>
-    <p>Image pixels: right/down from top-left. No guessed world bounds. Alignment is shared across replays in this browser.</p>
+    </div>
+    <p>Locked alignment is shared across replays in this browser. The replay file is unchanged.</p>
   </section>
   <div id="events"></div>
 </div>
@@ -158,6 +204,7 @@ async function parseBuffer(buf, name) {
   frames = replay.frames || [];
   events = replay.events || [];
   if (!frames.length) { alert("no frames in replay"); return; }
+  mapView.setReplay(frames);
   document.getElementById("drop").classList.add("hidden");
   renderTowers();
   renderEvents();
@@ -203,7 +250,7 @@ function size() {
 function render() {
   size();
   mapView.draw(ctx);
-  if (!replay || !mapView.transform) return;
+  if (!replay || !mapView.transform || mapView.editing) return;
   const fr = frames[frameIdx];
   if (!fr) return;
   const h = replay.header;

@@ -3,6 +3,15 @@
 // Image pixels are the stable intermediate space; viewport changes never change calibration.
 const MAP_SIZE = 4096;
 const MAP_STORAGE = "big-walk:bigmap-4096:calibration:v1";
+// Aligned against the full train circuit on bigmap.jpeg.
+const DEFAULT_MAP_TRANSFORM = Object.freeze({
+  xx: 1.916268922611503,
+  xz: 1.9229696648274224,
+  yx: 1.9229696648274224,
+  yz: -1.916268922611503,
+  tx: 2671.7307720982303,
+  ty: 619.7471474900055,
+});
 
 function solveCalibration(points) {
   if (points.length !== 3) return null;
@@ -26,11 +35,16 @@ class MapView {
     this.canvas = canvas;
     this.redraw = redraw;
     this.points = [];
-    this.transform = null;
+    this.transform = DEFAULT_MAP_TRANSFORM;
     this.pending = null;
     this.zoom = 1;
     this.panX = this.panY = 0;
     this.sources = [];
+    this.routes = [];
+    this.routeBounds = null;
+    this.editing = null;
+    this.showRoute = false;
+    this.persisted = true;
     this.status = document.getElementById("alignment-status");
     this.sourceSelect = document.getElementById("anchor-source");
     this.placeButton = document.getElementById("place-anchor");
@@ -42,13 +56,17 @@ class MapView {
     this.image.src = "../../bigmap.jpeg";
     try {
       const saved = JSON.parse(localStorage.getItem(MAP_STORAGE));
-      if (Array.isArray(saved) && saved.length <= 3 && saved.every(p =>
+      const points = Array.isArray(saved) ? saved : saved?.points;
+      if (Array.isArray(points) && points.length <= 3 && points.every(p =>
         typeof p.label === "string" && [p.x, p.z, p.u, p.v].every(Number.isFinite) &&
         p.u >= 0 && p.u <= MAP_SIZE && p.v >= 0 && p.v <= MAP_SIZE)) {
-        this.transform = solveCalibration(saved);
-        this.points = saved;
+        const t = points.length ? solveCalibration(points) : saved.transform;
+        if (t && (![t.xx, t.xz, t.yx, t.yz, t.tx, t.ty].every(Number.isFinite) ||
+            Math.abs(t.xx * t.yz - t.xz * t.yx) < 1e-12)) throw new Error("Invalid alignment");
+        this.transform = t || null;
+        this.points = points;
       }
-    } catch { /* Unavailable storage or obsolete/invalid calibration: start uncalibrated. */ }
+    } catch { /* Unavailable storage or invalid calibration: keep the bundled alignment. */ }
     this.sourceSelect.addEventListener("focus", pause);
     this.placeButton.addEventListener("click", () => {
       if (this.pending) { this.pending = null; this.updateUI(); return; }
@@ -68,34 +86,48 @@ class MapView {
       this.pending = null;
       this.points = [];
       this.transform = null;
+      this.showRoute = false;
       this.save();
     });
     document.getElementById("fit-map").addEventListener("click", () => {
       this.zoom = 1; this.panX = this.panY = 0; redraw();
     });
+    this.bindRouteControls(pause);
     this.bindPointer();
     this.updateUI();
   }
 
   save() {
-    let persisted = true;
-    try { localStorage.setItem(MAP_STORAGE, JSON.stringify(this.points)); } catch { persisted = false; }
+    this.persisted = true;
+    try {
+      localStorage.setItem(MAP_STORAGE, JSON.stringify({ points: this.points, transform: this.transform }));
+    } catch { this.persisted = false; }
     this.updateUI();
-    if (!persisted) this.status.textContent += " Storage unavailable; alignment lasts only this session.";
     this.redraw();
   }
 
   updateUI() {
-    this.status.textContent = this.pending
-      ? `Click the map location of ${this.pending.label}. Drag to pan; click Cancel to stop.`
-      : this.transform
-        ? "Calibrated from 3 references · saved in this browser. Check a fourth known location."
-        : `Uncalibrated · ${this.points.length}/3 references. Overlays appear after alignment.`;
+    this.status.textContent = this.editing
+      ? "Adjusting full route · preview only. Match the track, then lock alignment."
+      : this.pending
+        ? `Click the map location of ${this.pending.label}. Drag to pan; click Cancel to stop.`
+        : this.transform
+          ? this.transform === DEFAULT_MAP_TRANSFORM
+            ? "Alignment locked · bundled train-track calibration."
+            : `Alignment locked${this.points.length ? " from 3 references" : ""} · ${this.persisted ? "saved in this browser" : "storage unavailable; this session only"}.`
+          : `Uncalibrated · ${this.points.length}/3 references. Align the full route or place references.`;
+    document.getElementById("route-editor").hidden = !this.editing;
+    document.getElementById("reference-tools").hidden = !!this.editing;
+    document.getElementById("align-route").disabled = !this.ready || !this.routeBounds || !!this.editing;
+    document.getElementById("align-route").textContent = this.transform ? "Adjust full route" : "Align full route";
+    const show = document.getElementById("show-route");
+    show.disabled = !this.transform || !!this.editing;
+    show.checked = this.showRoute;
     this.placeButton.textContent = this.pending ? "Cancel placement" : "Place reference";
     this.placeButton.disabled = !this.ready || !this.sources.length || this.points.length === 3;
     this.sourceSelect.disabled = !!this.pending;
     document.getElementById("undo-anchor").disabled = !this.points.length;
-    document.getElementById("reset-alignment").disabled = !this.points.length && !this.pending;
+    document.getElementById("reset-alignment").disabled = !this.points.length && !this.pending && !this.transform;
     const list = document.getElementById("anchor-list");
     list.replaceChildren(...this.points.map((p, i) => {
       const li = document.createElement("li");
@@ -116,6 +148,133 @@ class MapView {
     const index = this.sources.findIndex(p => p.key === selected);
     if (index >= 0) this.sourceSelect.selectedIndex = index;
     this.placeButton.disabled = !this.ready || !this.sources.length || this.points.length === 3;
+  }
+
+  setReplay(frames) {
+    if (this.editing) this.cancelRoute();
+    const routes = new Map();
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    // Cache geometry once. Every finite recorded position contributes; gaps do not join.
+    frames.forEach((frame, index) => {
+      for (const p of frame.players) {
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+        let route = routes.get(p.netId);
+        if (!route) {
+          route = { path: new Path2D(), lastFrame: -2 };
+          routes.set(p.netId, route);
+        }
+        if (route.lastFrame === index - 1) route.path.lineTo(p.x, p.z);
+        else {
+          route.path.moveTo(p.x, p.z);
+          route.path.lineTo(p.x, p.z);
+        }
+        route.lastFrame = index;
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+      }
+    });
+    this.routes = [...routes.values()];
+    this.routeBounds = routes.size ? { minX, minZ, maxX, maxZ } : null;
+    this.updateUI();
+  }
+
+  bindRouteControls(pause) {
+    this.routeInputs = Object.fromEntries(
+      ["scale", "angle", "offset-x", "offset-y", "width", "height", "shear", "flip-x", "flip-y"]
+        .map(name => [name, document.getElementById(`route-${name}`)]));
+    document.getElementById("align-route").addEventListener("click", () => {
+      pause();
+      this.beginRoute();
+    });
+    document.getElementById("cancel-route").addEventListener("click", () => this.cancelRoute());
+    document.getElementById("lock-route").addEventListener("click", () => {
+      if (!this.editing || !this.adjustRoute()) return;
+      this.points = [];
+      this.editing = null;
+      this.save();
+    });
+    document.getElementById("show-route").addEventListener("change", e => {
+      this.showRoute = e.target.checked;
+      this.redraw();
+    });
+    for (const [name, input] of Object.entries(this.routeInputs)) {
+      input.addEventListener("input", () => {
+        const slider = document.getElementById(`route-${name}-range`);
+        if (slider && input.validity.valid) slider.value = input.value;
+        this.adjustRoute();
+      });
+    }
+    for (const name of ["scale", "angle"]) {
+      document.getElementById(`route-${name}-range`).addEventListener("input", e => {
+        this.routeInputs[name].value = e.target.value;
+        this.adjustRoute();
+      });
+    }
+  }
+
+  beginRoute() {
+    if (!this.ready || !this.routeBounds || this.editing) return;
+    const b = this.routeBounds;
+    const x = (b.minX + b.maxX) / 2, z = (b.minZ + b.maxZ) / 2;
+    const scale = MAP_SIZE * 0.65 / Math.max(1, b.maxX - b.minX, b.maxZ - b.minZ);
+    // An initial preview, never a claimed geographic calibration.
+    const base = this.transform || {
+      xx: scale, xz: 0, yx: 0, yz: -scale,
+      tx: MAP_SIZE / 2 - scale * x, ty: MAP_SIZE / 2 + scale * z,
+    };
+    this.editing = {
+      previous: this.transform, showRoute: this.showRoute, base,
+      u: base.xx * x + base.xz * z + base.tx,
+      v: base.yx * x + base.yz * z + base.ty,
+    };
+    this.pending = null;
+    this.transform = { ...base };
+    this.showRoute = true;
+    for (const [name, input] of Object.entries(this.routeInputs)) {
+      if (input.type === "checkbox") input.checked = false;
+      else input.value = ["scale", "width", "height"].includes(name) ? "100" : "0";
+    }
+    document.getElementById("route-scale-range").value = 100;
+    document.getElementById("route-angle-range").value = 0;
+    this.updateUI();
+    this.redraw();
+  }
+
+  adjustRoute() {
+    if (!this.editing) return false;
+    const inputs = Object.values(this.routeInputs);
+    const valid = inputs.every(input => input.type === "checkbox" ||
+      (input.validity.valid && Number.isFinite(input.valueAsNumber)));
+    document.getElementById("lock-route").disabled = !valid;
+    if (!valid) return false;
+    const number = name => this.routeInputs[name].valueAsNumber;
+    const angle = number("angle") * Math.PI / 180;
+    const scale = number("scale") / 100;
+    const sx = scale * number("width") / 100 * (this.routeInputs["flip-x"].checked ? -1 : 1);
+    const sy = scale * number("height") / 100 * (this.routeInputs["flip-y"].checked ? -1 : 1);
+    const shear = number("shear") / 100;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    const a = cos * sx, b = (cos * shear - sin) * sy;
+    const c = sin * sx, d = (sin * shear + cos) * sy;
+    const { base: t, u, v } = this.editing;
+    this.transform = {
+      xx: a * t.xx + b * t.yx, xz: a * t.xz + b * t.yz,
+      yx: c * t.xx + d * t.yx, yz: c * t.xz + d * t.yz,
+      tx: u + number("offset-x") + a * (t.tx - u) + b * (t.ty - v),
+      ty: v + number("offset-y") + c * (t.tx - u) + d * (t.ty - v),
+    };
+    this.redraw();
+    return true;
+  }
+
+  cancelRoute() {
+    if (!this.editing) return;
+    this.transform = this.editing.previous;
+    this.showRoute = this.editing.showRoute;
+    this.editing = null;
+    document.getElementById("lock-route").disabled = false;
+    this.updateUI();
+    this.redraw();
   }
 
   viewport() {
@@ -150,6 +309,26 @@ class MapView {
     ctx.fillStyle = "#172e3a";
     ctx.fillRect(0, 0, this.canvas.clientWidth, this.canvas.clientHeight);
     if (this.ready) ctx.drawImage(this.image, ox, oy, MAP_SIZE * scale, MAP_SIZE * scale);
+    if (this.transform && this.showRoute) {
+      const t = this.transform;
+      // Transform the cached paths, not stroke widths: the overlay stays thin at every zoom.
+      const matrix = new DOMMatrix([
+        scale * t.xx, scale * t.yx, scale * t.xz, scale * t.yz,
+        ox + scale * t.tx, oy + scale * t.ty,
+      ]);
+      ctx.save();
+      ctx.strokeStyle = "#ff70da";
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = ctx.lineCap = "round";
+      ctx.globalAlpha = 0.85;
+      for (const route of this.routes) {
+        const path = new Path2D();
+        path.addPath(route.path, matrix);
+        ctx.stroke(path);
+      }
+      ctx.restore();
+    }
+    if (this.editing) return;
     for (let i = 0; i < this.points.length; i++) {
       const [x, y] = this.imageToScreen(this.points[i].u, this.points[i].v);
       ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
@@ -169,7 +348,13 @@ class MapView {
     canvas.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
       const [x, y] = local(e);
-      drag = { x, y, px: this.panX, py: this.panY, moved: false };
+      drag = {
+        x, y, px: this.panX, py: this.panY, moved: false,
+        editing: this.editing && !e.shiftKey ? this.editing : null,
+        scale: this.viewport().scale,
+        offsetX: this.routeInputs["offset-x"].valueAsNumber,
+        offsetY: this.routeInputs["offset-y"].valueAsNumber,
+      };
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener("pointermove", e => {
@@ -177,8 +362,15 @@ class MapView {
       if (drag) {
         if (Math.hypot(x - drag.x, y - drag.y) > 4) drag.moved = true;
         if (drag.moved) {
-          this.panX = drag.px + x - drag.x; this.panY = drag.py + y - drag.y;
-          this.redraw();
+          if (drag.editing) {
+            if (this.editing !== drag.editing) { drag = null; return; }
+            this.routeInputs["offset-x"].value = (drag.offsetX + (x - drag.x) / drag.scale).toFixed(2);
+            this.routeInputs["offset-y"].value = (drag.offsetY + (y - drag.y) / drag.scale).toFixed(2);
+            this.adjustRoute();
+          } else {
+            this.panX = drag.px + x - drag.x; this.panY = drag.py + y - drag.y;
+            this.redraw();
+          }
         }
       }
       const [u, v] = this.screenToImage(x, y);
