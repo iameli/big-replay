@@ -36,8 +36,23 @@ A replay is a single gzip-compressed JSON document:
 
 ## Coordinate space
 
-World space (Unity `Vector3`, y-up). The viewer projects a top-down (x, z) view and uses the
-header landmarks (monument homes + gourd vices) as the schematic map.
+World space (Unity `Vector3`, y-up). The viewer projects X/Z onto `bigmap.jpeg`
+using three manually matched world/image references. Y is height and is not used
+for this top-down projection. Header landmarks can provide reference coordinates,
+but may be empty; player and gourd positions can also be used.
+
+Image coordinates are native 4096 × 4096 pixels: origin at top-left, U right,
+V down. The calibrated affine transform is:
+
+```text
+u = xx * x + xz * z + tx
+v = yx * x + yz * z + ty
+```
+
+Pan, zoom, viewport fitting, and device-pixel ratio are separate rendering
+operations; none changes the world-to-image calibration. References are stored
+in browser local storage, not in the replay format. See the README for alignment
+steps and accuracy limits.
 
 ## Event types
 

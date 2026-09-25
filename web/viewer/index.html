@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8">
 <title>Big Walk Replay</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin: 0; font: 13px/1.4 system-ui, sans-serif; background: #10131a; color: #dfe5ee; display: flex; height: 100vh; overflow: hidden; }
-  #drop { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 5; background: #10131a; }
+  #drop { position: fixed; left: 16px; top: 16px; max-width: calc(100% - 340px); padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; z-index: 5; background: #10131aeb; border: 1px solid #526675; border-radius: 8px; }
   #drop.hidden { display: none; }
   #drop .big { font-size: 18px; color: #8fa3bd; }
-  #canvaswrap { flex: 1; position: relative; }
+  #canvaswrap { flex: 1; min-width: 0; position: relative; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-  #sidebar { width: 300px; border-left: 1px solid #232a36; background: #151a23; display: flex; flex-direction: column; }
+  #sidebar { width: 320px; flex-shrink: 0; overflow-y: auto; border-left: 1px solid #232a36; background: #151a23; display: flex; flex-direction: column; }
   #sidebar h1 { font-size: 14px; margin: 10px 12px 6px; color: #c9d6e8; }
   #meta { font-size: 11px; color: #7d8ba0; margin: 0 12px 8px; }
   .row { display: flex; gap: 8px; align-items: center; padding: 6px 12px; }
@@ -35,6 +36,26 @@
   .lg-gourd::before { background: #f2b13c; }
   .lg-slot::before { background: #57d187; border-radius: 2px !important; }
   .lg-land::before { background: #6f7f96; width: 4px !important; height: 4px !important; }
+  canvas { touch-action: none; cursor: grab; }
+  canvas.placing { cursor: crosshair; }
+  #map-tools { position: absolute; bottom: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 12px; pointer-events: none; }
+  #map-tools button { pointer-events: auto; }
+  #coordinates { background: #10131adb; padding: 5px 8px; font: 11px monospace; }
+  #alignment { margin: 12px; padding-top: 10px; border-top: 1px solid #313c52; }
+  #alignment h2 { font-size: 13px; margin: 0; }
+  #alignment p, #anchor-list { font-size: 11px; color: #aab8cc; }
+  #alignment-status { color: #f2d18a !important; }
+  #anchor-source { width: 100%; margin: 5px 0 8px; background: #232b3a; color: #dfe5ee; padding: 5px; }
+  #anchor-list { list-style: none; padding: 0; overflow-wrap: anywhere; }
+  #anchor-list li { margin: 6px 0; }
+  button:disabled { opacity: .45; cursor: default; }
+  @media (max-width: 650px) {
+    body { flex-direction: column; }
+    #canvaswrap { flex: none; height: 60vh; }
+    #sidebar { width: 100%; flex: 1; min-height: 0; }
+    #drop { max-width: calc(100% - 32px); }
+    #coordinates { font-size: 9px; }
+  }
 </style>
 </head>
 <body>
@@ -43,14 +64,17 @@
   <label class="btn">choose file<input type="file" accept=".gz,.json" hidden></label>
 </div>
 
-<div id="canvaswrap"><canvas id="map"></canvas></div>
+<div id="canvaswrap">
+  <canvas id="map" aria-label="Replay map. Drag to pan and scroll to zoom."></canvas>
+  <div id="map-tools"><button class="btn" id="fit-map">Fit map</button><span id="coordinates">Drag to pan · scroll to zoom</span></div>
+</div>
 
 <div id="sidebar">
   <h1>Big Walk Replay</h1>
   <div id="meta"></div>
   <div class="row">
     <button class="btn" id="play">▶</button>
-    <input id="scrub" type="range" step="0.01">
+    <input id="scrub" aria-label="Replay time" type="range" min="0" step="1">
     <span id="time">0:00</span>
   </div>
   <div class="row" style="padding-top:0">
@@ -66,9 +90,22 @@
   </div>
   <div id="towers"></div>
   <div id="status"></div>
+  <section id="alignment">
+    <h2>Map alignment</h2>
+    <p id="alignment-status" role="status"></p>
+    <p>Choose a known recorded position, then place it on the image. Use three widely separated locations forming a triangle. X/Z is the ground plane; Y is height.</p>
+    <label for="anchor-source">Reference at current frame</label>
+    <select id="anchor-source"></select>
+    <button class="btn" id="place-anchor">Place reference</button>
+    <button class="btn" id="undo-anchor">Undo</button>
+    <button class="btn" id="reset-alignment">Clear</button>
+    <ol id="anchor-list"></ol>
+    <p>Image pixels: right/down from top-left. No guessed world bounds. Alignment is shared across replays in this browser.</p>
+  </section>
   <div id="events"></div>
 </div>
 
+<script src="map-view.js"></script>
 <script>
 "use strict";
 const TOWERS = {
@@ -80,11 +117,11 @@ const GOURD_STATE = ["locked", "loose", "stashed", "pinned"];
 const playerColors = ["#4a8cff","#ff5d5d","#57d187","#f2b13c","#c563f2","#38c6c6","#ff8f3c","#7fbf3c","#3c7dff","#e056a8","#8fa3bd","#b8cc55"];
 
 let replay = null, frames = [], events = [], frameIdx = 0, playing = false, speed = 1, showTrail = true;
-let proj = null; // {scale, offX, offZ, ymin}
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
 const scrub = document.getElementById("scrub"), timeEl = document.getElementById("time");
 const playBtn = document.getElementById("play"), trailBtn = document.getElementById("trail");
 const eventsEl = document.getElementById("events"), towersEl = document.getElementById("towers");
+const mapView = new MapView(canvas, render, () => setPlaying(false));
 
 // ---------- file loading ----------
 const input = document.querySelector("#drop input");
@@ -122,7 +159,6 @@ async function parseBuffer(buf, name) {
   events = replay.events || [];
   if (!frames.length) { alert("no frames in replay"); return; }
   document.getElementById("drop").classList.add("hidden");
-  setupProjection();
   renderTowers();
   renderEvents();
   frameIdx = 0;
@@ -130,7 +166,7 @@ async function parseBuffer(buf, name) {
   scrub.value = 0;
   updateMeta();
   tick();
-  setPlaying(true);
+  setPlaying(false);
 }
 
 async function loadUrl(url) {
@@ -149,46 +185,27 @@ function updateMeta() {
 }
 
 // ---------- projection ----------
-function setupProjection() {
-  const h = replay.header;
-  const pts = [];
-  for (const l of (h.landmarks || [])) pts.push([l.x, l.z]);
-  for (const fr of frames) {
-    for (const p of fr.players) pts.push([p.x, p.z]);
-    for (const g of fr.gourds) pts.push([g.x, g.z]);
-  }
-  let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
-  for (const [x, z] of pts) {
-    xmin = Math.min(xmin, x); xmax = Math.max(xmax, x);
-    zmin = Math.min(zmin, z); zmax = Math.max(zmax, z);
-  }
-  const pad = 40;
-  const w = canvas.clientWidth - pad * 2, hpx = canvas.clientHeight - pad * 2;
-  const scale = Math.min(w / Math.max(1, xmax - xmin), hpx / Math.max(1, zmax - zmin));
-  proj = {
-    scale, offX: pad + (w - scale * (xmax - xmin)) / 2 - xmin * scale,
-    offZ: pad + (hpx - scale * (zmax - zmin)) / 2 - zmin * scale,
-  };
-}
-
 function toScreen(x, z) {
-  return [proj.offX + x * proj.scale, proj.offZ + z * proj.scale];
+  return mapView.toScreen(x, z);
 }
 
 function size() {
-  canvas.width = canvas.clientWidth * devicePixelRatio;
-  canvas.height = canvas.clientHeight * devicePixelRatio;
+  const width = Math.round(canvas.clientWidth * devicePixelRatio);
+  const height = Math.round(canvas.clientHeight * devicePixelRatio);
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 }
 
 // ---------- rendering ----------
 function render() {
-  if (!replay) return;
-  const fr = frames[Math.min(frameIdx, frames.length - 1)];
-  if (!fr) return;
   size();
-  ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-
+  mapView.draw(ctx);
+  if (!replay || !mapView.transform) return;
+  const fr = frames[frameIdx];
+  if (!fr) return;
   const h = replay.header;
   // landmarks
   ctx.fillStyle = "#6f7f96";
@@ -198,7 +215,6 @@ function render() {
   }
 
   // monument slots
-  const filled = new Set(fr.monuments.filter(m => m.filled).map(m => m.homeName));
   const homeLm = new Map((h.landmarks || []).filter(l => l.id.startsWith("home-")).map(l => [parseInt(l.id.slice(5), 10), [l.x, l.z]]));
   for (const m of fr.monuments) {
     const pos = homeLm.get(m.homeName);
@@ -212,7 +228,6 @@ function render() {
   }
 
   // gourds (before players so stashed ones sit under player markers)
-  const gourdPos = new Map();
   for (const g of fr.gourds) {
     const [sx, sy] = toScreen(g.x, g.z);
     ctx.beginPath();
@@ -221,7 +236,6 @@ function render() {
     ctx.globalAlpha = g.state === 0 ? 0.35 : 0.9;
     ctx.fill();
     ctx.globalAlpha = 1;
-    gourdPos.set(g.name, [sx, sy]);
   }
 
   // trails
@@ -255,13 +269,8 @@ function render() {
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = p.drowsy ? "#ffd24a" : "#0c0e13";
     ctx.stroke();
-    // yaw arrow
-    const ang = p.yaw;
-    ctx.strokeStyle = "#0c0e13";
-    ctx.beginPath();
-    ctx.moveTo(sx + Math.cos(ang) * 2, sy + Math.sin(ang) * 2);
-    ctx.lineTo(sx + Math.cos(ang) * 12, sy + Math.sin(ang) * 12);
-    ctx.stroke();
+    // Recorded yaw in current real captures is only 0/pi, not a reliable heading.
+    // Do not draw a facing arrow until the recorder's yaw contract is corrected.
     // label
     ctx.fillStyle = color;
     ctx.font = "11px system-ui";
@@ -272,16 +281,13 @@ function render() {
 // ---------- playback ----------
 function tick() {
   if (!replay) return;
-  const fr = frames[Math.min(frameIdx, frames.length - 1)];
-  const h = replay.header || {};
-  const dt = (h.sampleIntervalSec || 0.1) * speed;
-  frameIdx += dt / (h.sampleIntervalSec || 0.1);
-  if (frameIdx >= frames.length - 1) { frameIdx = frames.length - 1; setPlaying(false); }
+  const fr = frames[frameIdx];
   scrub.value = frameIdx;
-  const secs = frameIdx * (h.sampleIntervalSec || 0.1);
-  timeEl.textContent = fmt(secs);
+  timeEl.textContent = fmt(fr.time);
+  mapView.setSources(fr, replay.header.landmarks || []);
   render();
   updateStatus(fr);
+  updateTowers(fr);
 }
 
 function fmt(s) {
@@ -291,22 +297,31 @@ function fmt(s) {
 }
 
 function setPlaying(v) {
+  if (v && replay && frameIdx === frames.length - 1) { frameIdx = 0; tick(); }
+  playbackTime = frames[frameIdx]?.time || 0;
+  lastTick = performance.now();
   playing = v;
   playBtn.textContent = playing ? "⏸" : "▶";
 }
 
-function play(reset) {
-  setPlaying(true);
-}
-
 playBtn.addEventListener("click", () => setPlaying(!playing));
-scrub.addEventListener("input", () => { frameIdx = +scrub.value; tick(); });
+scrub.addEventListener("input", () => { setPlaying(false); frameIdx = +scrub.value; tick(); });
 for (const [mult, btn] of [[1, document.getElementById("sp1")], [2, document.getElementById("sp2")], [4, document.getElementById("sp4")], [8, document.getElementById("sp8")]]) {
   btn.addEventListener("click", () => { speed = mult; });
 }
-trailBtn.addEventListener("click", () => { showTrail = !showTrail; trailBtn.textContent = "trail: " + (showTrail ? "on" : "off"); });
+trailBtn.addEventListener("click", () => { showTrail = !showTrail; trailBtn.textContent = "trail: " + (showTrail ? "on" : "off"); render(); });
 
-setInterval(() => { if (playing) tick(); }, 33);
+let lastTick = performance.now(), playbackTime = 0;
+setInterval(() => {
+  const now = performance.now(), elapsed = (now - lastTick) / 1000;
+  lastTick = now;
+  if (!playing || !replay) { playbackTime = frames[frameIdx]?.time || 0; return; }
+  playbackTime += elapsed * speed;
+  let next = frameIdx;
+  while (next + 1 < frames.length && frames[next + 1].time <= playbackTime) next++;
+  if (next !== frameIdx) { frameIdx = next; tick(); }
+  if (frameIdx === frames.length - 1) setPlaying(false);
+}, 33);
 
 function updateStatus(fr) {
   const alive = fr.players.filter(p => p.alive).length;
@@ -338,22 +353,25 @@ function updateTowers(fr) {
 
 function renderEvents() {
   eventsEl.textContent = "";
-  const h = replay.header || {};
-  const dt = h.sampleIntervalSec || 0.1;
   for (const ev of events) {
     const el = document.createElement("div");
     el.className = "ev";
-    el.innerHTML = `<span class="t">${fmt(ev.time)}</span><span class="d">${ev.type}${ev.detail ? " · " + ev.detail : ""}</span>`;
+    const time = document.createElement("span"), detail = document.createElement("span");
+    time.className = "t"; time.textContent = fmt(ev.time);
+    detail.className = "d"; detail.textContent = ev.type + (ev.detail ? " · " + ev.detail : "");
+    el.append(time, detail);
     el.addEventListener("click", () => {
-      frameIdx = Math.min(frames.length - 1, Math.floor(ev.time / dt));
-      scrub.value = frameIdx;
+      setPlaying(false);
+      const next = frames.findIndex(fr => fr.time >= ev.time);
+      frameIdx = next < 0 ? frames.length - 1 : next;
       tick();
     });
     eventsEl.appendChild(el);
   }
 }
 
-window.addEventListener("resize", () => { if (replay) render(); });
+new ResizeObserver(render).observe(document.getElementById("canvaswrap"));
+render();
 </script>
 </body>
 </html>
