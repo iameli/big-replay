@@ -28,9 +28,30 @@ Work in progress: read-only recorder with an automatic desktop UI + map-backed r
 
 ## Automatic recorder (Windows)
 
-[Download Big Replay for Windows x64](https://github.com/iameli/big-replay/releases/latest/download/BigReplay-win-x64.zip).
-Extract the ZIP and double-click **BigReplay.exe**. Keep the bundled `manifest.json`
-beside it. No console, .NET installation, or command-line arguments are needed.
+[Download the Big Replay installer](https://github.com/iameli/big-replay/releases/latest/download/BigReplay-Setup.exe)
+and run **BigReplay-Setup.exe**. It installs for your Windows account and adds a
+**Big Replay** Start menu shortcut. No administrator access or .NET installation is needed.
+
+Select **Start Big Replay when I sign in to Windows** during setup to record
+automatically after you sign in. This is optional and unchecked on the first
+installation; your selection is remembered on upgrades. It starts the normal
+recorder window, not a background service.
+
+To change the setting, close Big Replay and rerun the installer. Unchecking the
+option removes startup registration. You can also disable it through Windows
+**Settings → Apps → Startup**.
+
+Install updates over the existing installation. Setup will ask you to close a
+running Big Replay first so it can finish saving. Uninstall through Windows
+**Settings → Apps → Installed apps**; your **Documents/BigReplay** recordings are
+kept. Program files live in `%LOCALAPPDATA%\Programs\Big Replay`.
+
+The installer is not code-signed, so Windows may show an unknown-publisher or
+SmartScreen warning.
+
+Prefer a portable copy? [Download the Windows x64 ZIP](https://github.com/iameli/big-replay/releases/latest/download/BigReplay-win-x64.zip),
+extract it, and run **BigReplay.exe**. Keep the bundled `manifest.json` beside it.
+The portable ZIP does not register Windows startup automatically.
 
 - It watches for Big Walk every two seconds, including when launched before the game.
 - Once connected, it waits for players and captures at **10 Hz**.
@@ -74,6 +95,13 @@ dotnet publish src/BigReplay.Desktop -c Release -r win-x64 --self-contained true
 Compress-Archive -Path dist/BigReplay/* -DestinationPath dist/BigReplay-win-x64.zip -Force
 ```
 
+To also build `dist/BigReplay-Setup.exe`, install
+[Inno Setup 6](https://github.com/jrsoftware/issrc/releases/tag/is-6_7_1) and run after publishing:
+
+```powershell
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.1.0 installer/BigReplay.iss
+```
+
 Distribute the ZIP, not just the executable: the manifest is required. The bundled
 manifest must match the installed game build; see [the trust notes](docs/trust.md).
 
@@ -91,8 +119,9 @@ record subsequent walks. Existing output files are never overwritten.
 
 Pushes to `next` run [Release Big Replay](https://github.com/iameli/big-replay/actions/workflows/release.yml):
 build the solution on Windows with .NET 10, publish the self-contained x64 app, and
-attach `BigReplay-win-x64.zip` to a new commit-tagged GitHub release marked **latest**.
-The download link above always selects that latest release.
+attach **BigReplay-Setup.exe** and **BigReplay-win-x64.zip** to a new commit-tagged
+GitHub release marked **latest**. The installer is built with the Windows runner's
+Inno Setup compiler. The download links above always select that latest release.
 
 New pushes cancel superseded builds; only the current `next` commit is published.
 The workflow can also be run manually from the Actions page with `next` selected.
