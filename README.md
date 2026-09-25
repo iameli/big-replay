@@ -123,17 +123,27 @@ attach **BigReplay-Setup.exe** and **BigReplay-win-x64.zip** to a new commit-tag
 GitHub release marked **latest**. The installer is built with the Windows runner's
 Inno Setup compiler. The download links above always select that latest release.
 
+The same workflow deploys the viewer to [GitHub Pages](https://iameli.github.io/big-replay/)
+in a separate job. It publishes only the homepage redirect, `web/viewer/` (including
+the bundled sample), and `bigmap.jpeg`; recordings elsewhere in the repository are
+not included. Repository Pages settings use **GitHub Actions** as the build source,
+with the `github-pages` environment allowing deployments from `next`.
+
 New pushes cancel superseded builds; only the current `next` commit is published.
 The workflow can also be run manually from the Actions page with `next` selected.
 It uses GitHub's built-in token; no separate release secret is required.
 
 ## Replay map
 
-Open `web/viewer/index.html` in a current Chromium browser and choose or drop a
-`.replay.json.gz` / `.json` replay. `bigmap.jpeg` is loaded from the repository root;
-keep that relative layout intact. No build or package install is needed.
-Alternatively, serve the **repository root** with a static HTTP server and open
-`/web/viewer/index.html?replay=../../run1.replay.json.gz`.
+Open the **[live Big Replay viewer](https://iameli.github.io/big-replay/)** in a current
+Chromium browser and choose or drop a `.replay.json.gz` / `.json` recording.
+Chosen files are read locally in your browser, not uploaded.
+[Try the bundled sample](https://iameli.github.io/big-replay/?replay=sample.replay.json.gz).
+
+For offline use, open `web/viewer/index.html` from a checkout. `bigmap.jpeg` is loaded
+from the repository root; keep that relative layout intact. No build or package
+install is needed. Alternatively, serve the **repository root** with a static HTTP
+server and open `/web/viewer/index.html?replay=../../run1.replay.json.gz`.
 
 Drag the map to pan, scroll or pinch to zoom around the cursor, and use **Fit map**
 to reset the view. Trackpad pinch has higher sensitivity than ordinary scrolling.

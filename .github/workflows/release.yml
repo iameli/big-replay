@@ -72,6 +72,42 @@ jobs:
           Run on the **Big Walk host machine**, as the same Windows user as the game. Keep the bundled **manifest.json** beside the executable; it must match the installed game build.
 
           Recordings are saved to **Documents/BigReplay** and are kept when uninstalling. Close Big Replay before updating or uninstalling so it can finish saving.
+
+          Watch recordings in the [Big Replay viewer](https://iameli.github.io/big-replay/). Files chosen in the viewer are read locally in your browser, not uploaded.
           '@
           gh release create $tag dist/BigReplay-Setup.exe dist/BigReplay-win-x64.zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'Big Replay' --notes $notes --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+
+  pages:
+    if: github.ref == 'refs/heads/next'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out viewer commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Stage viewer site
+        run: |
+          mkdir -p _site/web
+          cp index.html bigmap.jpeg _site/
+          cp -R web/viewer _site/web/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+      - name: Deploy viewer
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
