@@ -1,28 +1,85 @@
 # Big Walk Replay
 
 External replay recorder + viewer for Big Walk (House House / Panic, Unity 6000.3.17f1, IL2CPP).
-No mods, no loader: the recorder attaches to the running game on the host machine, resolves the
-game's own metadata once at attach (read-only il2cpp API calls), then samples positions and
-state entirely via `ReadProcessMemory`. Produces a replay file that a static web viewer plays back.
+No mods, no loader: the recorder opens the running game on the host machine with read-only
+access, validates an offline field manifest, then samples positions and state entirely via
+`ReadProcessMemory`. Produces a replay file that a static web viewer plays back.
 
 ## Layout
 
 - `src/Replay.Format/` — replay file model + serializer + static game data (towers, gourd names).
-- `src/GameAccess/` — process attach, one-shot metadata resolver, memory readers, game model.
-- `src/BigWalkReplay.Recorder/` — CLI: attach, sample at N Hz, write replay file.
+- `src/GameAccess/` — read-only process access, manifest-backed memory readers, game model.
+- `src/BigWalkReplay.Recorder/` — CLI + shared capture loop: sample at N Hz, write replay file.
+- `src/BigWalkReplay.Desktop/` — native Windows GUI: watch for the game and record automatically.
 - `schemas/` — JSON Schema for replay files (the contract the web front-end validates against).
 - `web/viewer/` — static replay viewer with the island image, playback, and map calibration.
 - `docs/` — format spec + the read-only/no-writes trust story.
 
 ## Status
 
-Work in progress: attach-time resolver + recorder spine + map-backed replay viewer.
+Work in progress: read-only recorder with an automatic desktop UI + map-backed replay viewer.
 
 ## Requirements
 
-- Windows x64, .NET SDK 10
-- Big Walk running (process name `Big Walk.exe`), same user (no admin needed)
+- Windows x64. The self-contained desktop release needs no .NET installation.
+- .NET SDK 10 to build from source or run the CLI.
+- Big Walk (process name `Big Walk.exe`), running as the same user (no admin needed)
 - Recorder must run on the **host** machine (Mirror host sees all 12 player bodies + all gourd state)
+
+## Automatic recorder (Windows)
+
+Extract the desktop release and double-click **BigReplay.exe**. Keep the bundled
+`manifest.json` beside it. No console or command-line arguments are needed.
+
+- It watches for Big Walk every two seconds, including when launched before the game.
+- Once connected, it waits for players and captures at **10 Hz**.
+- Replays go into **Documents/BigReplay**, using the Windows Documents location
+  (including redirected/OneDrive Documents), with unique timestamped filenames.
+- **Pause recording** finishes and saves the current file. **Resume recording**
+  starts watching again and creates a fresh recording when the game is available.
+- Closing the window finishes and saves; leave it open or minimized during a run.
+- **Open recordings folder** opens the output folder in Explorer.
+- If the game exits, the replay is finished and the app watches for the next launch.
+- A missing/incompatible manifest or capture/save failure is shown in the window.
+  Fix the problem and click **Resume recording**. Game startup/access failures retry
+  automatically. Only one desktop instance runs per Windows login.
+
+Captures use `.replay.json.gz.partial` while recording and become `.replay.json.gz`
+only after successful finalization. Do not open the active file in the viewer.
+Sessions with no player samples leave no replay. On a capture/save error, any partial
+file is retained for investigation; it may not be playable. Forced termination,
+Windows shutdown, or power loss can also leave an unfinished file.
+
+**Current boundary:** one file per game process attachment (or Pause/Resume).
+Ending a walk and starting another **without closing Big Walk** still uses the same
+file. In-process walk/session splitting is intentionally deferred.
+
+### Run or package from source
+
+From the repository root:
+
+```powershell
+dotnet run --project src/BigWalkReplay.Desktop
+```
+
+Build a self-contained Windows x64 release:
+
+```powershell
+dotnet publish src/BigWalkReplay.Desktop -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist/BigReplay
+Compress-Archive -Path dist/BigReplay/* -DestinationPath dist/BigReplay-win-x64.zip -Force
+```
+
+Distribute the ZIP, not just the executable: the manifest is required. The bundled
+manifest must match the installed game build; see [the trust notes](docs/trust.md).
+
+The CLI remains available:
+
+```powershell
+dotnet run --project src/BigWalkReplay.Recorder -- record manifest.json --out my-walk.replay.json.gz
+```
+
+Ctrl+C finishes the replay; game process exit now also finishes it. Existing output
+files are never overwritten.
 
 ## Replay map
 

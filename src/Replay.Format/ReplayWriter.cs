@@ -7,7 +7,7 @@ namespace Replay.Format;
 /// <summary>
 /// Replay writer: gzip-compressed JSON stream {header, frames[], events[]}.
 /// </summary>
-public sealed class ReplayWriter
+public sealed class ReplayWriter : IDisposable
 {
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -52,6 +52,10 @@ public sealed class ReplayWriter
         _sw.Write(JsonSerializer.Serialize(events ?? [], Json));
         _sw.Write('}');
         _sw.Flush();
-        _gz.Dispose();
+    }
+
+    public void Dispose()
+    {
+        _sw.Dispose();
     }
 }

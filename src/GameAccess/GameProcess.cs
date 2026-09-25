@@ -27,6 +27,18 @@ public sealed unsafe class GameProcess : IDisposable
     public long GameAssemblyBase { get; }
     public long GameAssemblySize { get; }
 
+    public bool HasExited
+    {
+        get
+        {
+            if (!GetExitCodeProcess(_handle, out uint code))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Unable to query the game process.");
+            }
+            return code != 259; // STILL_ACTIVE
+        }
+    }
+
     private GameProcess(nint handle, long gaBase, long gaSize)
     {
         _handle = handle;
@@ -39,7 +51,12 @@ public sealed unsafe class GameProcess : IDisposable
     {
         ArgumentNullException.ThrowIfNull(processName);
         string exeBase = Path.GetFileNameWithoutExtension(processName);
-        Process? proc = Process.GetProcessesByName(exeBase).FirstOrDefault();
+        Process[] processes = Process.GetProcessesByName(exeBase);
+        using Process? proc = processes.FirstOrDefault();
+        for (int i = 1; i < processes.Length; i++)
+        {
+            processes[i].Dispose();
+        }
         if (proc is null)
         {
             throw new InvalidOperationException($"No {processName} process found. Is the game running?");
@@ -171,6 +188,9 @@ public sealed unsafe class GameProcess : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(nint handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetExitCodeProcess(nint process, out uint exitCode);
 
     [DllImport("psapi.dll", SetLastError = true)]
     private static extern bool EnumProcessModulesEx(nint process, nint[] modules, uint size, ref uint needed, uint filter);

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using GameAccess;
 using Replay.Format;
 
@@ -15,8 +14,6 @@ namespace BigWalkReplay.Recorder;
 /// </summary>
 internal static class Program
 {
-    private const string GameVersion = "1.5.1 2608271531";
-    private const string UnityVersion = "6000.3.17f1";
 
     private static int Main(string[] args)
     {
@@ -158,175 +155,26 @@ internal static class Program
         var reader = new GameStateReader(game, layout);
         Console.WriteLine($"manifest OK; recording at {rate} Hz (Ctrl+C to stop)");
 
-        using var file = File.Create(outPath);
-        var writer = new ReplayWriter(file);
-
-        var events = new List<ReplayEvent>();
-
-        var clock = Stopwatch.StartNew();
-        double interval = 1.0 / rate;
-        double next = 0;
-        bool headerWritten = false;
-        bool serverWasActive = false;
-        var prevPlayers = new HashSet<uint>();
-        var prevFilled = new HashSet<int>();
-        int prevCorpses = 0;
-
-        Console.CancelKeyPress += (_, e) =>
+        using var stop = new CancellationTokenSource();
+        ConsoleCancelEventHandler cancel = (_, e) =>
         {
             e.Cancel = true;
-            _stop = true;
+            stop.Cancel();
         };
-        while (!_stop && (duration <= 0 || clock.Elapsed.TotalSeconds < duration))
+        Console.CancelKeyPress += cancel;
+        try
         {
-            double t = clock.Elapsed.TotalSeconds;
-            if (t < next)
-            {
-                Thread.Sleep(5);
-                continue;
-            }
-            next = t + interval;
-
-            try
-            {
-                bool active = reader.IsServerActive();
-                var players = reader.ReadPlayers();
-
-                if (clock.Elapsed.TotalSeconds - _lastStatus > 2.0)
-                {
-                    _lastStatus = clock.Elapsed.TotalSeconds;
-                    int blocks = layout.Classes.Values.Count(c => c.Resolved);
-                    Console.WriteLine($"  t={t,5:F1}s  active={active}  players={players.Count}  blocks={blocks}/{layout.Classes.Count}");
-                }
-
-                var (monuments, landmarks) = reader.ReadHomes();
-
-                if (!headerWritten && players.Count > 0)
-                {
-                    writer.WriteHeader(new ReplayHeader
-                    {
-                        GameVersion = GameVersion,
-                        UnityVersion = UnityVersion,
-                        RecordedAt = DateTime.UtcNow,
-                        SampleIntervalSec = interval,
-                        Landmarks = landmarks,
-                    });
-                    headerWritten = true;
-                    events.Add(new ReplayEvent { Time = t, Type = "run-started" });
-                }
-
-                if (!headerWritten)
-                {
-                    serverWasActive = active;
-                    continue;
-                }
-
-                // ---- events from deltas ----
-                var nowIds = players.Select(p => p.NetId).ToHashSet();
-                foreach (uint id in nowIds)
-                {
-                    if (!prevPlayers.Contains(id))
-                    {
-                        events.Add(new ReplayEvent { Time = t, Type = "player-joined", Detail = id.ToString() });
-                    }
-                }
-                foreach (uint id in prevPlayers)
-                {
-                    if (!nowIds.Contains(id))
-                    {
-                        events.Add(new ReplayEvent { Time = t, Type = "player-left", Detail = id.ToString() });
-                    }
-                }
-                prevPlayers = nowIds;
-
-                int corpses = reader.ReadCorpseCount();
-                if (corpses > prevCorpses)
-                {
-                    events.Add(new ReplayEvent { Time = t, Type = "death", Detail = (corpses - prevCorpses).ToString() });
-                }
-                prevCorpses = corpses;
-
-                foreach (var m in monuments)
-                {
-                    if (m.Filled && !prevFilled.Contains(m.HomeName))
-                    {
-                        events.Add(new ReplayEvent { Time = t, Type = "gourd-pinned", Detail = m.HomeName.ToString() });
-                        var tower = BigWalkData.TowerHomes.FirstOrDefault(kv => kv.Value.Contains(m.HomeName));
-                        if (tower.Key != null)
-                        {
-                            var group = BigWalkData.TowerHomes[tower.Key];
-                            if (group.All(h => monuments.Any(mm => mm.HomeName == h && mm.Filled)))
-                            {
-                                events.Add(new ReplayEvent { Time = t, Type = "tower-filled", Detail = tower.Key });
-                            }
-                        }
-                    }
-                }
-                prevFilled = monuments.Where(m => m.Filled).Select(m => m.HomeName).ToHashSet();
-
-                if (active && !serverWasActive)
-                {
-                    events.Add(new ReplayEvent { Time = t, Type = "run-started" });
-                }
-                else if (!active && serverWasActive)
-                {
-                    events.Add(new ReplayEvent { Time = t, Type = "run-ended" });
-                }
-                serverWasActive = active;
-
-                // ---- carried gourd positions: snap stashed gourds to their holder ----
-                var gourds = reader.ReadGourds();
-                var carriedByNetId = new Dictionary<uint, int>();
-                foreach (var g in gourds)
-                {
-                    if (g.State == GourdState.Stashed)
-                    {
-                        var holder = players.FirstOrDefault(p => p.NetId == g.HolderNetId);
-                        if (holder != null)
-                        {
-                            g.X = holder.X; g.Y = holder.Y; g.Z = holder.Z;
-                            carriedByNetId[g.HolderNetId] = g.Name;
-                        }
-                    }
-                }
-                foreach (var p in players)
-                {
-                    if (carriedByNetId.TryGetValue(p.NetId, out int gourdName))
-                    {
-                        p.CarriedGourd = gourdName;
-                    }
-                }
-
-                writer.WriteFrame(new ReplayFrame
-                {
-                    Time = t,
-                    Players = players,
-                    Gourds = gourds,
-                    Monuments = monuments,
-                });
-            }
-            catch (Exception e)
-            {
-                Console.Error.WriteLine($"sample failed (skipping): {e.Message}");
-            }
+            var result = RecordingSession.Record(reader, outPath, rate, duration, stop.Token,
+                status => Console.WriteLine($"  t={status.ElapsedSeconds,5:F1}s  players={status.Players}  frames={status.Frames}"));
+            Console.WriteLine(result.Path is null
+                ? "No live walk was detected; no replay saved."
+                : $"\nwrote {result.Path} ({result.Frames} frames)");
         }
-        if (!headerWritten)
+        finally
         {
-            writer.WriteHeader(new ReplayHeader
-            {
-                GameVersion = GameVersion,
-                UnityVersion = UnityVersion,
-                RecordedAt = DateTime.UtcNow,
-                SampleIntervalSec = interval,
-                Landmarks = [],
-            });
-            Console.WriteLine("no live walk was detected during this session (header written empty)");
+            Console.CancelKeyPress -= cancel;
         }
-        writer.Finish(events);
-        Console.WriteLine($"\nwrote {outPath} ({events.Count} events)");
         return 0;
     }
 
-    private static volatile bool _stop;
-    private static double _lastStatus;
 }

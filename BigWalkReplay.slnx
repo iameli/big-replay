@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/BigWalkReplay.Desktop/BigWalkReplay.Desktop.csproj" />
     <Project Path="src/BigWalkReplay.ManifestGen/BigWalkReplay.ManifestGen.csproj" />
     <Project Path="src/BigWalkReplay.Recorder/BigWalkReplay.Recorder.csproj" />
     <Project Path="src/GameAccess/GameAccess.csproj" />
