@@ -147,11 +147,14 @@ The viewer supplies an SVG favicon, Apple touch icon, 192/512-pixel home-screen
 icons through `site.webmanifest`, and a logo for link previews.
 
 Generated icons are checked in; normal builds need no image tools. After changing
-`logo.svg`, regenerate them with [ImageMagick 7](https://imagemagick.org/script/download.php#windows):
+`logo.svg`, regenerate them with [ImageMagick 7](https://imagemagick.org/script/download.php#windows)
+and Microsoft Edge (or another Chromium browser). Chromium renders the SVG first
+so clipping, reused paths, and outlines are preserved in the small raster icons.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/generate-icons.ps1
 # Or pass -MagickPath C:\path\to\magick.exe for a portable installation.
+# Or pass -BrowserPath "C:\Program Files\Google\Chrome\Application\chrome.exe".
 ```
 
 This preserves the artwork's proportions and transparent background, adding an
