@@ -66,6 +66,7 @@ public sealed class GameStateReader
             result.Add(new PlayerSnapshot
             {
                 NetId = ReadNetId(entry),
+                Name = ReadUsername(entry),
                 X = x, Y = y, Z = z, Yaw = yaw,
                 Alive = true,
                 IsPending = ReadIsPending(entry),
@@ -92,11 +93,32 @@ public sealed class GameStateReader
         long ni = _g.ReadPtr(behaviourObj + (uint)Off("NetworkBehaviour", "<netIdentity>k__BackingField"));
         return ni != 0 && _g.ReadBool(ni + (uint)Off("NetworkIdentity", "<isLocalPlayer>k__BackingField"));
     }
-
     private bool ReadIsPending(long playerChar)
     {
         long pn = _g.ReadPtr(playerChar + (uint)Off("PlayerCharacter", "playerNetworking"));
         return pn != 0 && _g.ReadBool(pn + (uint)Off("PlayerNetworking", "isPending"));
+    }
+
+    /// <summary>Read a managed .NET string (UTF-16; length @+0x10, chars @+0x14).</summary>
+    private string? ReadUsername(long playerChar)
+    {
+        long pn = _g.ReadPtr(playerChar + (uint)Off("PlayerCharacter", "playerNetworking"));
+        long strObj = pn != 0 ? _g.ReadPtr(pn + (uint)Off("PlayerNetworking", "username")) : 0;
+        if (strObj == 0)
+        {
+            return null;
+        }
+        int len = _g.ReadInt32(strObj + 0x10);
+        if (len is <= 0 or > 256)
+        {
+            return null;
+        }
+        Span<byte> raw = stackalloc byte[len * 2];
+        if (!_g.TryReadBytes(strObj + 0x14, raw))
+        {
+            return null;
+        }
+        return System.Text.Encoding.Unicode.GetString(raw);
     }
 
     private bool ReadDrowsy(long playerChar)

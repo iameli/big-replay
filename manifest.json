@@ -70,6 +70,16 @@
           "Name": "isPending",
           "Offset": 336,
           "IsStatic": false
+        },
+        {
+          "Name": "username",
+          "Offset": 240,
+          "IsStatic": false
+        },
+        {
+          "Name": "identifier",
+          "Offset": 248,
+          "IsStatic": false
         }
       ],
       "Statics": [

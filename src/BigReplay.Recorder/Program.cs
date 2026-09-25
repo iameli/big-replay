@@ -77,7 +77,7 @@ internal static class Program
         Console.WriteLine($"players: {players.Count}");
         foreach (var p in players)
         {
-            Console.WriteLine($"  netId={p.NetId} pos=({p.X:F2}, {p.Y:F2}, {p.Z:F2}) yaw={p.Yaw * 180 / Math.PI:F0}° pending={p.IsPending} drowsy={p.Drowsy}");
+            Console.WriteLine($"  netId={p.NetId} name={p.Name} pos=({p.X:F2}, {p.Y:F2}, {p.Z:F2}) yaw={p.Yaw * 180 / Math.PI:F0}° pending={p.IsPending} drowsy={p.Drowsy}");
         }
 
         var (monuments, landmarks) = reader.ReadHomes();

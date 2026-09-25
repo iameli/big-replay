@@ -29,6 +29,8 @@ public sealed class Landmark
 public sealed class PlayerSnapshot
 {
     public required uint NetId { get; init; }
+    /// <summary>In-game username (PlayerNetworking.username), when readable.</summary>
+    public string? Name { get; init; }
     public float X { get; set; }
     public float Y { get; set; }
     public float Z { get; set; }
