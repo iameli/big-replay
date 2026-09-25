@@ -158,6 +158,10 @@ to reset the view. Trackpad pinch has higher sensitivity than ordinary scrolling
 Playback starts paused; the timeline selects exact recorded frames. Playback and
 the clock use recorded timestamps rather than assuming uniform samples.
 
+The sidebar groups Playback, Player colors, Tower progress, Map alignment, and
+Events into collapsible sections. Click a heading, or focus it and press Enter
+or Space, to toggle it. Map alignment starts collapsed; the other sections start open.
+
 ### Markers, trails, and player colors
 
 Players use person-shaped vector icons; gourds use gourd-shaped icons. Larger
