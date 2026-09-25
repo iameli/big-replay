@@ -187,9 +187,11 @@ or Space, to toggle it. Map alignment starts collapsed; the other sections start
 
 ### Markers, trails, and player colors
 
-Players use person-shaped vector icons; gourds use gourd-shaped icons. Larger
-markers have light and dark outlines so they remain legible over the terrain.
-Carried gourds appear as a small gourd beside the player; sleepy players are labeled.
+Players use person-shaped vector icons; gourds use the side-view gourd silhouette
+in both the map and legend. White inner and dark outer outlines keep them visible
+over the terrain, while state colors distinguish loose/locked, stashed, and pinned
+gourds. Carried gourds use the same silhouette beside the player; sleepy players
+are labeled.
 
 The **Trails** dropdown offers **Off**, **Recent** (the last 40 frame intervals),
 and **Persistent · start to now**. Persistent trails retain each player's history
@@ -199,7 +201,13 @@ a jump. The trail mode is remembered in this browser. **Show full player routes*
 under alignment is separate: it deliberately includes future positions as well.
 
 **Player colors** lists every player in the recording, even before they join or
-after they leave. The 12-color palette is Sky, Coral, Mint, Gold, Violet, Cyan,
+after they leave. Each player's first readable recorded username is used in this
+list, map labels, join/leave events, and alignment choices, including names that
+become available later in the recording. Recordings without names fall back to
+`Player #<netId>`. Duplicate usernames remain separate players with independent
+color assignments.
+
+The 12-color palette is Sky, Coral, Mint, Gold, Violet, Cyan,
 Orange, Pink, Lime, Ivory, Rose, and Slate. Players receive distinct initial colors
 for a 12-player recording. Selecting another player's color swaps their assignments.
 Icons, labels, history trails, and full routes outside alignment mode all use the

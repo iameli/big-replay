@@ -31,10 +31,11 @@ function solveCalibration(points) {
 }
 
 class MapView {
-  constructor(canvas, redraw, pause, playerColor) {
+  constructor(canvas, redraw, pause, playerColor, playerLabel) {
     this.canvas = canvas;
     this.redraw = redraw;
     this.playerColor = playerColor;
+    this.playerLabel = playerLabel;
     this.points = [];
     this.transform = DEFAULT_MAP_TRANSFORM;
     this.pending = null;
@@ -141,7 +142,7 @@ class MapView {
   setSources(frame, landmarks) {
     const selected = this.sources[this.sourceSelect.selectedIndex]?.key;
     this.sources = [
-      ...frame.players.map(p => ({ key: `p${p.netId}`, label: `Player #${p.netId} at ${frame.time.toFixed(2)}s`, x: p.x, z: p.z })),
+      ...frame.players.map(p => ({ key: `p${p.netId}`, label: `${this.playerLabel(p.netId)} at ${frame.time.toFixed(2)}s`, x: p.x, z: p.z })),
       ...landmarks.map(l => ({ key: `l${l.id}`, label: `${l.label} (${l.id})`, x: l.x, z: l.z })),
       ...frame.gourds.map(g => ({ key: `g${g.name}`, label: `Gourd ${g.name}`, x: g.x, z: g.z })),
     ].filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
