@@ -12,7 +12,7 @@ access, validates an offline field manifest, then samples positions and state en
 - `src/BigReplay.Recorder/` — CLI + shared capture loop: sample at N Hz, write replay file.
 - `src/BigReplay.Desktop/` — native Windows GUI: watch for the game and record automatically.
 - `schemas/` — JSON Schema for replay files (the contract the web front-end validates against).
-- `web/viewer/` — static replay viewer with the island image, playback, and map calibration.
+- `index.html`, `map-view.js`, `bigmap.jpeg` — root-level replay viewer and map assets.
 - `docs/` — format spec + the read-only/no-writes trust story.
 
 ## Status
@@ -123,11 +123,15 @@ attach **BigReplay-Setup.exe** and **BigReplay-win-x64.zip** to a new commit-tag
 GitHub release marked **latest**. The installer is built with the Windows runner's
 Inno Setup compiler. The download links above always select that latest release.
 
-The same workflow deploys the viewer to [GitHub Pages](https://iameli.github.io/big-replay/)
-in a separate job. It publishes only the homepage redirect, `web/viewer/` (including
-the bundled sample), and `bigmap.jpeg`; recordings elsewhere in the repository are
-not included. Repository Pages settings use **GitHub Actions** as the build source,
-with the `github-pages` environment allowing deployments from `next`.
+The same workflow deploys the viewer to [big-replay.iame.li](https://big-replay.iame.li/)
+in a separate GitHub Pages job. It publishes only `index.html`, `map-view.js`,
+`bigmap.jpeg`, the synthetic `sample.replay.json.gz`, and `CNAME` at the site root;
+other recordings in the repository are not included. Repository Pages settings use
+**GitHub Actions** as the build source, with the `github-pages` environment allowing
+deployments from `next`.
+
+`CNAME` contains `big-replay.iame.li`. Its DNS CNAME points to `iameli.github.io`,
+and GitHub Pages is configured for that custom domain with HTTPS enforced.
 
 New pushes cancel superseded builds; only the current `next` commit is published.
 The workflow can also be run manually from the Actions page with `next` selected.
@@ -135,15 +139,19 @@ It uses GitHub's built-in token; no separate release secret is required.
 
 ## Replay map
 
-Open the **[live Big Replay viewer](https://iameli.github.io/big-replay/)** in a current
+Open the **[live Big Replay viewer](https://big-replay.iame.li/)** in a current
 Chromium browser and choose or drop a `.replay.json.gz` / `.json` recording.
 Chosen files are read locally in your browser, not uploaded.
-[Try the bundled sample](https://iameli.github.io/big-replay/?replay=sample.replay.json.gz).
+[Try the bundled sample](https://big-replay.iame.li/?replay=sample.replay.json.gz).
+The **Download Big Replay** button in the top-right of the controls opens the latest
+release in a new tab without interrupting the viewer.
 
-For offline use, open `web/viewer/index.html` from a checkout. `bigmap.jpeg` is loaded
-from the repository root; keep that relative layout intact. No build or package
-install is needed. Alternatively, serve the **repository root** with a static HTTP
-server and open `/web/viewer/index.html?replay=../../run1.replay.json.gz`.
+For offline use, open the root `index.html` from a checkout. Keep `map-view.js` and
+`bigmap.jpeg` beside it. No build or package install is needed. Alternatively,
+serve the repository root with a static HTTP server and open `/?replay=run1.replay.json.gz`.
+
+Browser-saved calibration and display preferences are per origin; settings from
+the former `github.io` site do not automatically transfer to the custom domain.
 
 Drag the map to pan, scroll or pinch to zoom around the cursor, and use **Fit map**
 to reset the view. Trackpad pinch has higher sensitivity than ordinary scrolling.

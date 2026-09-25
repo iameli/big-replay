@@ -58,7 +58,7 @@ replay = {
     "events": events,
 }
 
-out = "web/viewer/sample.replay.json.gz"
+out = "sample.replay.json.gz"
 with gzip.open(out, "wt", encoding="utf-8") as f:
     json.dump(replay, f)
 print("wrote", out, sum(len(f["players"]) for f in frames), "player-samples")

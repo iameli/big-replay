@@ -52,9 +52,9 @@ class MapView {
     this.image = new Image();
     this.image.onload = () => { this.ready = true; this.updateUI(); redraw(); };
     this.image.onerror = () => {
-      this.status.textContent = "Map unavailable. Serve the repository root so ../../bigmap.jpeg is reachable.";
+      this.status.textContent = "Map unavailable. Keep bigmap.jpeg beside index.html.";
     };
-    this.image.src = "../../bigmap.jpeg";
+    this.image.src = "bigmap.jpeg";
     try {
       const saved = JSON.parse(localStorage.getItem(MAP_STORAGE));
       const points = Array.isArray(saved) ? saved : saved?.points;

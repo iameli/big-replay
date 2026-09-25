@@ -19,7 +19,7 @@ recorder attaches to the host's running game and is 100% `ReadProcessMemory` fro
 - `Recorder` (`probe` / `probe-ro` / `record`) — pure reads; resolves static blocks at attach
   via klass discovery (below), samples players/gourds/corpses/monuments at N Hz, writes
   gzip-JSON replay files with events.
-- `web/viewer/index.html` — single-file viewer: top-down XZ map, markers (players w/ yaw +
+- `index.html` / `map-view.js` — root-level viewer: top-down XZ map, markers (players w/ yaw +
   carried-gourd + drowsy, gourds colored by state, monument slots, landmarks), timeline scrub,
   play/pause/1x–8x, per-player trails, tower fill table, event list with click-to-seek,
   loads via drag-drop or `?replay=<url>`.
@@ -41,7 +41,7 @@ game process ──attach (read-only)──► GameProcess      # OpenProcess(VM
                GameLayout ──► ClassDiscoveryContext    # klass → static blocks (pure reads)
                    │
                    ▼
-               GameStateReader ──► ReplayWriter ──► *.replay.json.gz ──► web/viewer
+               GameStateReader ──► ReplayWriter ──► *.replay.json.gz ──► index.html
 ```
 
 ### The il2cpp v39 facts that everything rests on (engine headers, Unity 6000.3.17f1)
@@ -92,7 +92,8 @@ src/BigReplay.Recorder/          # CLI: probe / probe-ro / record (-r rate, -d d
 src/BigReplay.Desktop/           # automatic Windows recorder UI
 src/Replay.Format/               # schema types + ReplayWriter (gzip JSON) + BigWalkData
 src/UharaProbe/                  # NET48 experiment against the genuine uhhara component (unused)
-web/viewer/index.html            # the viewer
+index.html  map-view.js          # the viewer (https://big-replay.iame.li/)
+bigmap.jpeg  sample.replay.json.gz  CNAME  # public viewer assets and domain
 schemas/replay-v1.schema.json    # contract for the web app
 docs/format.md  docs/trust.md    # replay format spec + the no-writes trust story
 scripts/                         # diagnostics (chain-diagnose, payoff, hunt-*, validate-statics,
@@ -109,7 +110,7 @@ dotnet run --project src\BigReplay.ManifestGen -- "C:\Program Files (x86)\Steam\
 dotnet run --project src\BigReplay.Recorder -- probe manifest.json
 # record (host machine; Ctrl+C or -d N seconds)
 dotnet run --project src\BigReplay.Recorder -- record -d 120 -o run.replay.json.gz manifest.json
-# play back: open web\viewer\index.html and drop run.replay.json.gz (or ...?replay=/path.json.gz)
+# play back: open index.html and drop run.replay.json.gz (or ...?replay=/path.json.gz)
 ```
 
 Requires .NET SDK 10 (net10.0), Windows, Big Walk running as the same user. Recorder must run

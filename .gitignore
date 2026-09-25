@@ -6,4 +6,4 @@ dist/
 out/
 *.replay.json
 *.replay.json.gz
-!web/viewer/sample.replay.json.gz
+!/sample.replay.json.gz
