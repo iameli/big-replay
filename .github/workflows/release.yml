@@ -47,6 +47,12 @@ jobs:
           }
           Compress-Archive -Path dist/BigReplay/* -DestinationPath dist/BigReplay-win-x64.zip -Force
 
+      - name: Build per-user installer
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          & $compiler "/DAppVersion=0.1.$env:GITHUB_RUN_NUMBER" installer/BigReplay.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+
       - name: Publish latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,11 +65,13 @@ jobs:
           }
           $tag = "next-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $notes = @'
-          Download and extract **BigReplay-win-x64.zip**, then run **BigReplay.exe**. Windows x64; no .NET installation is needed.
+          Download and run **BigReplay-Setup.exe** for a per-user installation, a Start menu shortcut, and an optional **Start Big Replay when I sign in to Windows** setting. No administrator access or .NET installation is needed.
+
+          Prefer a portable copy? Extract **BigReplay-win-x64.zip**, then run **BigReplay.exe**. Both downloads are for Windows x64.
 
           Run on the **Big Walk host machine**, as the same Windows user as the game. Keep the bundled **manifest.json** beside the executable; it must match the installed game build.
 
-          Recordings are saved to **Documents/BigReplay**.
+          Recordings are saved to **Documents/BigReplay** and are kept when uninstalling. Close Big Replay before updating or uninstalling so it can finish saving.
           '@
-          gh release create $tag dist/BigReplay-win-x64.zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'Big Replay' --notes $notes --latest
+          gh release create $tag dist/BigReplay-Setup.exe dist/BigReplay-win-x64.zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title 'Big Replay' --notes $notes --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
