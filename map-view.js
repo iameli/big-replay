@@ -443,6 +443,15 @@ class MapView {
       cache.resources.delete(victim);
       victim.owner.delete(victim.key);
       cache.bytes -= victim.bytes;
+      if (victim.owner === cache.outputs) {
+        for (const state of cache.states) {
+          if (!state.masks.has(victim.key)) state.tileBlocks.delete(victim.key);
+        }
+      } else if (!cache.outputs.has(victim.key)) {
+        for (const state of cache.states) {
+          if (victim.owner === state.masks) state.tileBlocks.delete(victim.key);
+        }
+      }
       for (const canvas of victim.canvases) canvas.width = canvas.height = 0;
     }
     const resource = {
@@ -460,8 +469,8 @@ class MapView {
     cache.resources.set(resource, true);
   }
 
-  tilesForBounds(cache, bounds, matrix) {
-    if (!bounds) return [];
+  rasterBounds(cache, bounds, matrix) {
+    if (!bounds) return null;
     let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
     for (const x of [bounds[0], bounds[2]]) {
       for (const z of [bounds[1], bounds[3]]) {
@@ -471,33 +480,47 @@ class MapView {
         top = Math.min(top, sy); bottom = Math.max(bottom, sy);
       }
     }
-    const x0 = Math.max(0, Math.floor((left - cache.halo) / TRAIL_TILE_SIZE));
-    const y0 = Math.max(0, Math.floor((top - cache.halo) / TRAIL_TILE_SIZE));
-    const x1 = Math.min(cache.columns - 1, Math.floor((right + cache.halo) / TRAIL_TILE_SIZE));
-    const y1 = Math.min(cache.rows - 1, Math.floor((bottom + cache.halo) / TRAIL_TILE_SIZE));
-    const result = [];
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) result.push(y * cache.columns + x);
+    // Outputs include a halo too: cover both that padding and the stroke radius.
+    const pad = 2 * cache.halo;
+    return [left - pad, top - pad, right + pad, bottom + pad];
+  }
+
+  tileIntersects(tile, bounds) {
+    return bounds && bounds[0] <= tile.x + tile.width && bounds[2] >= tile.x &&
+      bounds[1] <= tile.y + tile.height && bounds[3] >= tile.y;
+  }
+
+  blocksForTile(state, tile) {
+    let blocks = state.tileBlocks.get(tile.id);
+    if (!blocks) {
+      blocks = [];
+      for (let i = 0; i < state.blockBounds.length; i++) {
+        if (this.tileIntersects(tile, state.blockBounds[i])) blocks.push(i);
+      }
+      state.tileBlocks.set(tile.id, blocks);
     }
-    return result;
+    return blocks;
+  }
+
+  dirtyRasterBounds(cache, bounds) {
+    if (!bounds) return;
+    // Never enumerate the global grid. Only resident outputs and the current scene
+    // can become stale; a cold tile reconstructs at the current replay cutoff.
+    for (const output of cache.outputs.values()) {
+      if (this.tileIntersects(output.tile, bounds)) output.dirty = true;
+    }
+    for (const tile of cache.tiles) {
+      if (this.tileIntersects(tile, bounds)) cache.dirty.add(tile.id);
+    }
   }
 
   rasterState(route, cache, matrix) {
     this.prepareRoute(route, this.routeTolerance(matrix));
-    const state = {
-      route, end: 0, complete: 0, live: null, liveTiles: [],
-      tileBlocks: new Map(), blockTiles: [], paths: [], masks: new Map(),
+    return {
+      route, end: 0, complete: 0, live: null, liveBounds: null,
+      blockBounds: route.blocks.map(block => this.rasterBounds(cache, block.bounds, matrix)),
+      tileBlocks: new Map(), paths: [], masks: new Map(),
     };
-    route.blocks.forEach((block, index) => {
-      const tiles = this.tilesForBounds(cache, block.bounds, matrix);
-      state.blockTiles.push(tiles);
-      for (const tile of tiles) {
-        let blocks = state.tileBlocks.get(tile);
-        if (!blocks) state.tileBlocks.set(tile, blocks = []);
-        blocks.push(index);
-      }
-    });
-    return state;
   }
 
   updateRasterState(state, end, cache, matrix, full) {
@@ -516,28 +539,28 @@ class MapView {
       }
       if (stationary) { state.end = end; return; }
     }
-    for (const tile of state.liveTiles) cache.dirty.add(tile);
+    this.dirtyRasterBounds(cache, state.liveBounds);
     for (let i = state.complete; i < complete; i++) {
-      for (const tile of state.blockTiles[i]) cache.dirty.add(tile);
+      this.dirtyRasterBounds(cache, state.blockBounds[i]);
     }
     state.end = end;
     state.complete = complete;
     state.live = null;
-    state.liveTiles = [];
+    state.liveBounds = null;
     if (!full && end % ROUTE_BLOCK_SIZE) {
       const start = complete * ROUTE_BLOCK_SIZE;
       state.live = new Path2D();
       state.live.addPath(this.simplifiedPath(samples, start, end, state.route.tolerance), matrix);
-      state.liveTiles = this.tilesForBounds(cache, this.sampleBounds(samples, start, end), matrix);
-      for (const tile of state.liveTiles) cache.dirty.add(tile);
+      state.liveBounds = this.rasterBounds(cache, this.sampleBounds(samples, start, end), matrix);
+      this.dirtyRasterBounds(cache, state.liveBounds);
     }
   }
 
   rasterKey(mode, rx, ry) {
-    const { scale, ox, oy } = this.viewport(), t = this.transform;
+    const { scale } = this.viewport(), t = this.transform;
     return JSON.stringify([
       this.canvas.width, this.canvas.height, this.canvas.clientWidth, this.canvas.clientHeight,
-      rx, ry, scale, ox, oy, t && [t.xx, t.xz, t.yx, t.yz, t.tx, t.ty],
+      rx, ry, scale, t && [t.xx, t.xz, t.yx, t.yz, t.tx, t.ty],
       !!this.ready, mode, !!this.editing,
       this.routes.map(route => this.playerColor(route.netId)),
       this.points.map(point => [point.u, point.v]),
@@ -556,31 +579,54 @@ class MapView {
       const width = this.canvas.width, height = this.canvas.height;
       const halo = Math.ceil(2.5 * Math.max(rx, ry)) + 1;
       const side = TRAIL_TILE_SIZE + 2 * halo, scratchBytes = side * side * 4;
-      if (!width || !height || !Number.isFinite(scratchBytes) ||
+      if (!width || !height || !(rx > 0 && ry > 0) || !Number.isFinite(scratchBytes) ||
           scratchBytes * 5 > TRAIL_CACHE_BYTES) return null;
+      const { scale } = this.viewport(), t = this.transform;
+      const anchored = matrix && new DOMMatrix([
+        matrix.a, matrix.b, matrix.c, matrix.d, scale * t.tx, scale * t.ty,
+      ]);
       cache = {
-        key, rx, ry, halo, side, width, height, frame: frameIndex,
-        columns: Math.ceil(width / TRAIL_TILE_SIZE), rows: Math.ceil(height / TRAIL_TILE_SIZE),
-        resources: new Map(), outputs: new Map(), dirty: new Set(), states: [],
+        key, rx, ry, halo, side, width, height, frame: frameIndex, matrix: anchored,
+        columns: Math.ceil(width / TRAIL_TILE_SIZE) + 2,
+        rows: Math.ceil(height / TRAIL_TILE_SIZE) + 2,
+        resources: new Map(), outputs: new Map(), dirty: new Set(), states: [], tiles: [],
         scratch: new OffscreenCanvas(side, side), bytes: scratchBytes, scene: null,
       };
-      // A normal viewport gets one combined map/trail bitmap. At very high DPR,
-      // keep bounded, independently evictable scene tiles instead of a huge bitmap.
-      if (width * height * 4 <= TRAIL_CACHE_BYTES / 2 &&
-          width * height * 4 + 4 * scratchBytes <= TRAIL_CACHE_BYTES) {
-        cache.scene = new OffscreenCanvas(width, height);
-        cache.bytes += width * height * 4;
+      // Compose integer-aligned tile cores, then translate this one scene bitmap.
+      // The extra grid cells keep fractional sampling away from its outer edges.
+      const sceneWidth = cache.columns * TRAIL_TILE_SIZE, sceneHeight = cache.rows * TRAIL_TILE_SIZE;
+      const sceneBytes = sceneWidth * sceneHeight * 4;
+      if (sceneBytes <= TRAIL_CACHE_BYTES / 2 && sceneBytes + 5 * scratchBytes <= TRAIL_CACHE_BYTES) {
+        cache.scene = new OffscreenCanvas(sceneWidth, sceneHeight);
+        cache.bytes += sceneBytes;
       }
-      for (let i = 0; i < cache.columns * cache.rows; i++) cache.dirty.add(i);
-      if (matrix && (mode === "persistent" || mode === "full")) {
-        cache.states = this.routes.map(route => this.rasterState(route, cache, matrix));
+      if (anchored && (mode === "persistent" || mode === "full")) {
+        cache.states = this.routes.map(route => this.rasterState(route, cache, anchored));
       }
       this.rasterCache = cache;
+    }
+    const { ox, oy } = this.viewport();
+    cache.offsetX = ox * rx;
+    cache.offsetY = oy * ry;
+    const sceneX = Math.floor((-cache.offsetX - 1) / TRAIL_TILE_SIZE) * TRAIL_TILE_SIZE;
+    const sceneY = Math.floor((-cache.offsetY - 1) / TRAIL_TILE_SIZE) * TRAIL_TILE_SIZE;
+    if (cache.sceneX !== sceneX || cache.sceneY !== sceneY) {
+      cache.sceneX = sceneX; cache.sceneY = sceneY;
+      cache.tiles = [];
+      cache.dirty.clear();
+      for (let row = 0; row < cache.rows; row++) {
+        for (let column = 0; column < cache.columns; column++) {
+          const x = sceneX + column * TRAIL_TILE_SIZE, y = sceneY + row * TRAIL_TILE_SIZE;
+          const id = `${x / TRAIL_TILE_SIZE},${y / TRAIL_TILE_SIZE}`;
+          cache.tiles.push({ id, x, y, width: TRAIL_TILE_SIZE, height: TRAIL_TILE_SIZE });
+          cache.dirty.add(id);
+        }
+      }
     }
     cache.frame = frameIndex;
     for (const state of cache.states) {
       this.updateRasterState(state, mode === "full" ? state.route.samples.length :
-        this.sampleEnd(state.route.samples, frameIndex), cache, matrix, mode === "full");
+        this.sampleEnd(state.route.samples, frameIndex), cache, cache.matrix, mode === "full");
     }
     return cache;
   }
@@ -600,8 +646,8 @@ class MapView {
   }
 
   tileHistory(cache, state, tile, matrix, pinned) {
-    const blocks = state.tileBlocks.get(tile.id);
-    if (!blocks || blocks[0] >= state.complete) return null;
+    const blocks = this.blocksForTile(state, tile);
+    if (!blocks.length || blocks[0] >= state.complete) return null;
     let resource = state.masks.get(tile.id);
     if (!resource) {
       resource = this.rasterResource(cache, cache.side, cache.side, 3, state.masks, tile.id, pinned);
@@ -630,10 +676,12 @@ class MapView {
     if (this.ready) ctx.drawImage(this.image, ox, oy, MAP_SIZE * scale, MAP_SIZE * scale);
   }
 
-  drawReferences(ctx) {
+  drawReferences(ctx, anchored = false) {
     if (this.editing) return;
+    const { scale, ox, oy } = this.viewport();
     for (let i = 0; i < this.points.length; i++) {
-      const [x, y] = this.imageToScreen(this.points[i].u, this.points[i].v);
+      const x = this.points[i].u * scale + (anchored ? 0 : ox);
+      const y = this.points[i].v * scale + (anchored ? 0 : oy);
       ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = "#10131a"; ctx.fillRect(x + 10, y - 11, 15, 17);
@@ -643,24 +691,24 @@ class MapView {
 
   paintTrailTile(cache, tile, target, matrix, mode, pinned) {
     const ctx = target.getContext("2d");
-    const x = cache.scene ? tile.x : 0, y = cache.scene ? tile.y : 0;
+    const { scale } = this.viewport();
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.beginPath(); ctx.rect(x, y, tile.width, tile.height); ctx.clip();
-    ctx.setTransform(cache.rx, 0, 0, cache.ry, x - tile.x, y - tile.y);
-    this.drawMap(ctx);
-    if (mode !== "full") this.drawReferences(ctx);
+    ctx.fillStyle = "#172e3a";
+    ctx.fillRect(0, 0, cache.side, cache.side);
+    ctx.setTransform(cache.rx, 0, 0, cache.ry, cache.halo - tile.x, cache.halo - tile.y);
+    if (this.ready) ctx.drawImage(this.image, 0, 0, MAP_SIZE * scale, MAP_SIZE * scale);
+    if (mode !== "full") this.drawReferences(ctx, true);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const scratch = cache.scratch.getContext("2d");
     for (const state of cache.states) {
       const history = this.tileHistory(cache, state, tile, matrix, pinned);
-      const live = state.liveTiles.includes(tile.id) ? state.live : null;
+      const live = this.tileIntersects(tile, state.liveBounds) ? state.live : null;
       if (!history && !live) continue;
       // Other players often stand still while one player's mutable tail changes.
       // Reuse their already-colored tile instead of tinting both masks every frame.
       if (history && history.paintedComplete === history.complete && history.paintedLive === live) {
-        ctx.drawImage(history.canvases[2], cache.halo, cache.halo, tile.width, tile.height,
-          x, y, tile.width, tile.height);
+        ctx.drawImage(history.canvases[2], 0, 0);
         continue;
       }
       const player = history?.canvases[2].getContext("2d");
@@ -684,20 +732,55 @@ class MapView {
         scratch.fillRect(0, 0, cache.side, cache.side);
         scratch.globalCompositeOperation = "source-over";
         if (player) player.drawImage(cache.scratch, 0, 0);
-        else ctx.drawImage(cache.scratch, cache.halo, cache.halo, tile.width, tile.height,
-          x, y, tile.width, tile.height);
+        else ctx.drawImage(cache.scratch, 0, 0);
       }
       if (history) {
         history.paintedComplete = history.complete;
         history.paintedLive = live;
-        ctx.drawImage(history.canvases[2], cache.halo, cache.halo, tile.width, tile.height,
-          x, y, tile.width, tile.height);
+        ctx.drawImage(history.canvases[2], 0, 0);
       }
     }
     if (mode === "full") {
-      ctx.setTransform(cache.rx, 0, 0, cache.ry, x - tile.x, y - tile.y);
-      this.drawReferences(ctx);
+      ctx.setTransform(cache.rx, 0, 0, cache.ry, cache.halo - tile.x, cache.halo - tile.y);
+      this.drawReferences(ctx, true);
     }
+    ctx.restore();
+  }
+
+  drawRasterCache(ctx, cache, mode) {
+    const scene = cache.scene?.getContext("2d");
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (const tile of cache.tiles) {
+      if (scene && !cache.dirty.has(tile.id)) continue;
+      let output = cache.outputs.get(tile.id);
+      if (!output) {
+        output = this.rasterResource(cache, cache.side, cache.side, 1, cache.outputs, tile.id);
+        output.tile = tile;
+        output.dirty = true;
+      }
+      this.touchRaster(cache, output);
+      if (output.dirty) {
+        this.paintTrailTile(cache, tile, output.canvases[0], cache.matrix, mode, output);
+        output.dirty = false;
+      }
+      cache.dirty.delete(tile.id);
+      if (scene) {
+        scene.drawImage(output.canvases[0], cache.halo, cache.halo, tile.width, tile.height,
+          tile.x - cache.sceneX, tile.y - cache.sceneY, tile.width, tile.height);
+      } else {
+        // Each destination pixel belongs to exactly one integer-aligned clip. Its
+        // fractional source sample can still read the neighboring padded pixels.
+        const x = tile.x + cache.offsetX, y = tile.y + cache.offsetY;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(Math.floor(x), Math.floor(y), tile.width, tile.height);
+        ctx.clip();
+        ctx.drawImage(output.canvases[0], x - cache.halo, y - cache.halo);
+        ctx.restore();
+      }
+    }
+    if (scene) ctx.drawImage(cache.scene, cache.sceneX + cache.offsetX, cache.sceneY + cache.offsetY);
     ctx.restore();
   }
 
@@ -707,26 +790,7 @@ class MapView {
     const backing = ctx.getTransform();
     const cache = this.getRasterCache(mode, frameIndex, matrix, backing.a, backing.d);
     if (cache) {
-      const count = cache.columns * cache.rows;
-      const tiles = cache.scene ? cache.dirty : Array.from({ length: count }, (_, i) => i);
-      for (const id of tiles) {
-        const x = id % cache.columns * TRAIL_TILE_SIZE, y = Math.floor(id / cache.columns) * TRAIL_TILE_SIZE;
-        const tile = { id, x, y, width: Math.min(TRAIL_TILE_SIZE, cache.width - x),
-          height: Math.min(TRAIL_TILE_SIZE, cache.height - y) };
-        let output = cache.outputs.get(id);
-        if (!cache.scene && !output) {
-          output = this.rasterResource(cache, tile.width, tile.height, 1, cache.outputs, id);
-          cache.dirty.add(id);
-        }
-        if (output) this.touchRaster(cache, output);
-        if (cache.dirty.has(id)) {
-          this.paintTrailTile(cache, tile, cache.scene || output.canvases[0], matrix, mode, output);
-          cache.dirty.delete(id);
-        }
-        if (!cache.scene) ctx.drawImage(output.canvases[0], x / cache.rx, y / cache.ry,
-          tile.width / cache.rx, tile.height / cache.ry);
-      }
-      if (cache.scene) ctx.drawImage(cache.scene, 0, 0, cache.width / cache.rx, cache.height / cache.ry);
+      this.drawRasterCache(ctx, cache, mode);
     } else {
       // Degenerate/extraordinary backing sizes still render correctly without allocating
       // a bitmap larger than the budget. Normal/high-DPR viewports use the paths above.

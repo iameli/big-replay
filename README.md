@@ -207,12 +207,19 @@ a jump. The trail mode is remembered in this browser. **Show full player routes*
 under alignment is separate: it deliberately includes future positions as well.
 
 Persistent trails and full routes retain the **0.25 CSS pixel** simplification
-bound. Completed blocks are rasterized into 256-device-pixel tiles; normal forward
-playback updates only tiles affected by new movement or revisions to the current
-partial block. Per-player outline/fill masks preserve self-intersections and player
-overlap order. Already-colored player tiles are reused when another player moves.
+bound. Completed blocks are rasterized into 256-device-pixel tiles anchored to the
+map at the current zoom, not to the screen. Normal forward playback updates only
+tiles affected by new movement or revisions to the current partial block.
+Per-player outline/fill masks preserve self-intersections and player overlap
+order. Already-colored player tiles are reused when another player moves.
 The map and trails are composited into cached scene pixels rather than redrawing
 all accumulated history each frame.
+
+Panning translates cached pixels and reuses overlapping tiles, including when
+reversing direction. Newly exposed or evicted tiles reconstruct at the current
+replay frame; returning tiles also incorporate movement recorded while offscreen.
+Padded tiles and a grid-aligned scene prevent seams during fractional-pixel pans.
+Tile indexes are built only for retained tiles, not for the entire zoomed map.
 
 The map/trail bitmap cache has a **64 MiB RGBA pixel budget**, including its scene,
 scratch, and retained tiles. Large viewports use evictable scene tiles instead of
@@ -221,10 +228,11 @@ sprite cache at the display pixel ratio; oversized labels render uncached rather
 than truncating names. These budgets do not include replay/geometry data, the
 decoded source map, or browser overhead.
 
-Backward seeks, pan/zoom, resizing or pixel-ratio changes, alignment edits, color
-changes, and trail-mode changes rebuild the relevant cached pixels. Cold views
-and seeks can still take longer than steady playback. Loading another replay
-releases the previous bitmaps. Recorded positions and replay files are unchanged.
+Backward seeks, zoom, resizing or pixel-ratio changes, alignment edits, color
+changes, and trail-mode changes rebuild the relevant cached pixels. Cold views,
+large jumps into uncached areas, and seeks can still take longer than steady
+playback or warm panning. Loading another replay releases the previous bitmaps.
+Recorded positions and replay files are unchanged.
 Hidden alignment reference controls are not rebuilt on every frame.
 
 Geometry and cache-lifecycle regression checks require Node.js but no packages:
