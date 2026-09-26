@@ -4,6 +4,8 @@
 const MAP_SIZE = 4096;
 const MAP_STORAGE = "big-walk:bigmap-4096:calibration:v1";
 const ROUTE_BLOCK_SIZE = 256;
+const TRAIL_TILE_SIZE = 256; // Device pixels; the halo is cropped when compositing.
+const TRAIL_CACHE_BYTES = 64 * 1024 * 1024;
 // Aligned against the full train circuit on bigmap.jpeg.
 const DEFAULT_MAP_TRANSFORM = Object.freeze({
   xx: 1.916268922611503,
@@ -172,6 +174,7 @@ class MapView {
       }
     });
     this.routes = [...routes.values()];
+    this.clearRasterCache();
     this.routeBounds = routes.size ? { minX, minZ, maxX, maxZ } : null;
     this.updateUI();
   }
@@ -364,92 +367,270 @@ class MapView {
     return path;
   }
 
+  sampleEnd(samples, frameIndex) {
+    let lo = 0, hi = samples.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (samples[mid][0] <= frameIndex) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  sampleBounds(samples, start, end) {
+    if (start >= end) return null;
+    if (start > 0 && samples[start - 1][0] === samples[start][0] - 1) start--;
+    const bounds = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = start; i < end; i++) {
+      bounds[0] = Math.min(bounds[0], samples[i][1]);
+      bounds[1] = Math.min(bounds[1], samples[i][2]);
+      bounds[2] = Math.max(bounds[2], samples[i][1]);
+      bounds[3] = Math.max(bounds[3], samples[i][2]);
+    }
+    return bounds;
+  }
+
   prepareRoute(route, tolerance) {
     if (route.tolerance === tolerance) return;
     route.tolerance = tolerance;
     route.blocks = [];
-    route.path = null;
-    route.history = new Path2D();
-    route.historyBlocks = 0;
     for (let start = 0; start < route.samples.length; start += ROUTE_BLOCK_SIZE) {
-      route.blocks.push(this.simplifiedPath(route.samples, start,
-        Math.min(start + ROUTE_BLOCK_SIZE, route.samples.length), tolerance));
+      const end = Math.min(start + ROUTE_BLOCK_SIZE, route.samples.length);
+      route.blocks.push({
+        path: this.simplifiedPath(route.samples, start, end, tolerance),
+        bounds: this.sampleBounds(route.samples, start, end),
+      });
     }
   }
 
-  persistentPath(route, end, tolerance) {
-    this.prepareRoute(route, tolerance);
-    const blocks = Math.floor(end / ROUTE_BLOCK_SIZE);
-    if (blocks < route.historyBlocks) {
-      route.history = new Path2D();
-      route.historyBlocks = 0;
-    }
-    while (route.historyBlocks < blocks) {
-      route.history.addPath(route.blocks[route.historyBlocks++]);
-    }
-    const path = new Path2D(route.history);
-    // Simplify only the recorded prefix of the live block: no future positions leak in.
-    if (end % ROUTE_BLOCK_SIZE) {
-      path.addPath(this.simplifiedPath(route.samples, blocks * ROUTE_BLOCK_SIZE, end, tolerance));
+  recentPath(route, frameIndex) {
+    const samples = route.samples, end = this.sampleEnd(samples, frameIndex);
+    let start = end;
+    while (start > 0 && samples[start - 1][0] >= frameIndex - 40) start--;
+    const path = new Path2D();
+    for (let i = start; i < end; i++) {
+      const [, x, z] = samples[i];
+      if (i === start || samples[i - 1][0] !== samples[i][0] - 1) path.moveTo(x, z);
+      path.lineTo(x, z);
     }
     return path;
   }
 
-  appendSamples(path, samples, start, end) {
-    for (let i = start; i < end; i++) {
-      const [frame, x, z] = samples[i];
-      if (i > 0 && samples[i - 1][0] === frame - 1) path.lineTo(x, z);
-      else { path.moveTo(x, z); path.lineTo(x, z); }
+  clearRasterCache() {
+    const cache = this.rasterCache;
+    if (!cache) return;
+    for (const resource of cache.resources.keys()) {
+      for (const canvas of resource.canvases) canvas.width = canvas.height = 0;
     }
+    if (cache.scene) cache.scene.width = cache.scene.height = 0;
+    cache.scratch.width = cache.scratch.height = 0;
+    this.rasterCache = null;
   }
 
-  drawTrails(ctx, frameIndex, mode) {
-    if (mode === "off" || this.showRoute) return;
-    const matrix = this.routeMatrix();
-    const tolerance = mode === "persistent" ? this.routeTolerance(matrix) : 0;
-    for (const route of this.routes) {
-      const samples = route.samples;
-      // Find the current prefix without scanning the entire recording each render.
-      let lo = 0, hi = samples.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (samples[mid][0] <= frameIndex) lo = mid + 1;
-        else hi = mid;
+  // Only raster storage is budgeted here. Geometry contains recorded coordinates/paths,
+  // never viewport-sized player bitmaps. Evicted masks reconstruct from the tile index.
+  rasterResource(cache, width, height, count, owner, key, pinned) {
+    const bytes = width * height * 4 * count;
+    while (cache.bytes + bytes > TRAIL_CACHE_BYTES) {
+      let victim;
+      for (const resource of cache.resources.keys()) {
+        if (resource === pinned) continue;
+        if (!victim) victim = resource;
+        // Valid output pixels remain useful even after their history masks go cold.
+        if (resource.owner !== cache.outputs) { victim = resource; break; }
       }
-      const end = lo;
-      let path;
-      if (mode === "persistent") {
-        path = this.persistentPath(route, end, tolerance);
-      } else {
-        let start = end;
-        while (start > 0 && samples[start - 1][0] >= frameIndex - 40) start--;
-        path = new Path2D();
-        if (start < end) {
-          path.moveTo(samples[start][1], samples[start][2]);
-          this.appendSamples(path, samples, start, end);
+      if (!victim) return null;
+      cache.resources.delete(victim);
+      victim.owner.delete(victim.key);
+      cache.bytes -= victim.bytes;
+      for (const canvas of victim.canvases) canvas.width = canvas.height = 0;
+    }
+    const resource = {
+      canvases: Array.from({ length: count }, () => new OffscreenCanvas(width, height)),
+      bytes, owner, key,
+    };
+    cache.bytes += bytes;
+    cache.resources.set(resource, true);
+    owner.set(key, resource);
+    return resource;
+  }
+
+  touchRaster(cache, resource) {
+    cache.resources.delete(resource);
+    cache.resources.set(resource, true);
+  }
+
+  tilesForBounds(cache, bounds, matrix) {
+    if (!bounds) return [];
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const x of [bounds[0], bounds[2]]) {
+      for (const z of [bounds[1], bounds[3]]) {
+        const sx = (matrix.a * x + matrix.c * z + matrix.e) * cache.rx;
+        const sy = (matrix.b * x + matrix.d * z + matrix.f) * cache.ry;
+        left = Math.min(left, sx); right = Math.max(right, sx);
+        top = Math.min(top, sy); bottom = Math.max(bottom, sy);
+      }
+    }
+    const x0 = Math.max(0, Math.floor((left - cache.halo) / TRAIL_TILE_SIZE));
+    const y0 = Math.max(0, Math.floor((top - cache.halo) / TRAIL_TILE_SIZE));
+    const x1 = Math.min(cache.columns - 1, Math.floor((right + cache.halo) / TRAIL_TILE_SIZE));
+    const y1 = Math.min(cache.rows - 1, Math.floor((bottom + cache.halo) / TRAIL_TILE_SIZE));
+    const result = [];
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) result.push(y * cache.columns + x);
+    }
+    return result;
+  }
+
+  rasterState(route, cache, matrix) {
+    this.prepareRoute(route, this.routeTolerance(matrix));
+    const state = {
+      route, end: 0, complete: 0, live: null, liveTiles: [],
+      tileBlocks: new Map(), blockTiles: [], paths: [], masks: new Map(),
+    };
+    route.blocks.forEach((block, index) => {
+      const tiles = this.tilesForBounds(cache, block.bounds, matrix);
+      state.blockTiles.push(tiles);
+      for (const tile of tiles) {
+        let blocks = state.tileBlocks.get(tile);
+        if (!blocks) state.tileBlocks.set(tile, blocks = []);
+        blocks.push(index);
+      }
+    });
+    return state;
+  }
+
+  updateRasterState(state, end, cache, matrix, full) {
+    const samples = state.route.samples;
+    const complete = full ? state.route.blocks.length : Math.floor(end / ROUTE_BLOCK_SIZE);
+    if (end === state.end && complete === state.complete) return;
+    // Repeating a contiguous stationary endpoint cannot change RDP's polyline.
+    // Keep its pixels (and mutable path) rather than dirtying a parked player.
+    if (complete === state.complete && end > state.end && state.end > 0) {
+      let stationary = true;
+      for (let i = state.end; i < end; i++) {
+        const a = samples[i - 1], b = samples[i];
+        if (a[0] + 1 !== b[0] || a[1] !== b[1] || a[2] !== b[2]) {
+          stationary = false; break;
         }
       }
-      this.strokeRoute(ctx, path, matrix, this.playerColor(route.netId));
+      if (stationary) { state.end = end; return; }
+    }
+    for (const tile of state.liveTiles) cache.dirty.add(tile);
+    for (let i = state.complete; i < complete; i++) {
+      for (const tile of state.blockTiles[i]) cache.dirty.add(tile);
+    }
+    state.end = end;
+    state.complete = complete;
+    state.live = null;
+    state.liveTiles = [];
+    if (!full && end % ROUTE_BLOCK_SIZE) {
+      const start = complete * ROUTE_BLOCK_SIZE;
+      state.live = new Path2D();
+      state.live.addPath(this.simplifiedPath(samples, start, end, state.route.tolerance), matrix);
+      state.liveTiles = this.tilesForBounds(cache, this.sampleBounds(samples, start, end), matrix);
+      for (const tile of state.liveTiles) cache.dirty.add(tile);
     }
   }
 
-  draw(ctx) {
+  rasterKey(mode, rx, ry) {
+    const { scale, ox, oy } = this.viewport(), t = this.transform;
+    return JSON.stringify([
+      this.canvas.width, this.canvas.height, this.canvas.clientWidth, this.canvas.clientHeight,
+      rx, ry, scale, ox, oy, t && [t.xx, t.xz, t.yx, t.yz, t.tx, t.ty],
+      !!this.ready, mode, !!this.editing,
+      this.routes.map(route => this.playerColor(route.netId)),
+      this.points.map(point => [point.u, point.v]),
+    ]);
+  }
+
+  getRasterCache(mode, frameIndex, matrix,
+    rx = this.canvas.width / this.canvas.clientWidth, ry = this.canvas.height / this.canvas.clientHeight) {
+    const key = this.rasterKey(mode, rx, ry);
+    let cache = this.rasterCache;
+    if (cache && (cache.key !== key || (mode === "persistent" && frameIndex < cache.frame))) {
+      this.clearRasterCache();
+      cache = null;
+    }
+    if (!cache) {
+      const width = this.canvas.width, height = this.canvas.height;
+      const halo = Math.ceil(2.5 * Math.max(rx, ry)) + 1;
+      const side = TRAIL_TILE_SIZE + 2 * halo, scratchBytes = side * side * 4;
+      if (!width || !height || !Number.isFinite(scratchBytes) ||
+          scratchBytes * 5 > TRAIL_CACHE_BYTES) return null;
+      cache = {
+        key, rx, ry, halo, side, width, height, frame: frameIndex,
+        columns: Math.ceil(width / TRAIL_TILE_SIZE), rows: Math.ceil(height / TRAIL_TILE_SIZE),
+        resources: new Map(), outputs: new Map(), dirty: new Set(), states: [],
+        scratch: new OffscreenCanvas(side, side), bytes: scratchBytes, scene: null,
+      };
+      // A normal viewport gets one combined map/trail bitmap. At very high DPR,
+      // keep bounded, independently evictable scene tiles instead of a huge bitmap.
+      if (width * height * 4 <= TRAIL_CACHE_BYTES / 2 &&
+          width * height * 4 + 4 * scratchBytes <= TRAIL_CACHE_BYTES) {
+        cache.scene = new OffscreenCanvas(width, height);
+        cache.bytes += width * height * 4;
+      }
+      for (let i = 0; i < cache.columns * cache.rows; i++) cache.dirty.add(i);
+      if (matrix && (mode === "persistent" || mode === "full")) {
+        cache.states = this.routes.map(route => this.rasterState(route, cache, matrix));
+      }
+      this.rasterCache = cache;
+    }
+    cache.frame = frameIndex;
+    for (const state of cache.states) {
+      this.updateRasterState(state, mode === "full" ? state.route.samples.length :
+        this.sampleEnd(state.route.samples, frameIndex), cache, matrix, mode === "full");
+    }
+    return cache;
+  }
+
+  completedTilePath(state, blocks, start, matrix) {
+    const path = new Path2D();
+    for (const index of blocks) {
+      if (index >= state.complete) break;
+      if (index < start) continue;
+      if (!state.paths[index]) {
+        state.paths[index] = new Path2D();
+        state.paths[index].addPath(state.route.blocks[index].path, matrix);
+      }
+      path.addPath(state.paths[index]);
+    }
+    return path;
+  }
+
+  tileHistory(cache, state, tile, matrix, pinned) {
+    const blocks = state.tileBlocks.get(tile.id);
+    if (!blocks || blocks[0] >= state.complete) return null;
+    let resource = state.masks.get(tile.id);
+    if (!resource) {
+      resource = this.rasterResource(cache, cache.side, cache.side, 3, state.masks, tile.id, pinned);
+      if (!resource) return null;
+      resource.complete = 0;
+    }
+    this.touchRaster(cache, resource);
+    if (resource.complete === state.complete) return resource;
+    const path = this.completedTilePath(state, blocks, resource.complete, matrix);
+    for (let index = 0; index < 2; index++) {
+      const ctx = resource.canvases[index].getContext("2d");
+      ctx.setTransform(cache.rx, 0, 0, cache.ry, cache.halo - tile.x, cache.halo - tile.y);
+      ctx.lineJoin = ctx.lineCap = "round";
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = index ? 2.5 : 5;
+      ctx.stroke(path);
+    }
+    resource.complete = state.complete;
+    return resource;
+  }
+
+  drawMap(ctx) {
     const { scale, ox, oy } = this.viewport();
     ctx.fillStyle = "#172e3a";
     ctx.fillRect(0, 0, this.canvas.clientWidth, this.canvas.clientHeight);
     if (this.ready) ctx.drawImage(this.image, ox, oy, MAP_SIZE * scale, MAP_SIZE * scale);
-    if (this.transform && this.showRoute) {
-      const matrix = this.routeMatrix();
-      const tolerance = this.routeTolerance(matrix);
-      for (const route of this.routes) {
-        this.prepareRoute(route, tolerance);
-        if (!route.path) {
-          route.path = new Path2D();
-          for (const block of route.blocks) route.path.addPath(block);
-        }
-        this.strokeRoute(ctx, route.path, matrix, this.editing ? "#ff70da" : this.playerColor(route.netId));
-      }
-    }
+  }
+
+  drawReferences(ctx) {
     if (this.editing) return;
     for (let i = 0; i < this.points.length; i++) {
       const [x, y] = this.imageToScreen(this.points[i].u, this.points[i].v);
@@ -457,6 +638,117 @@ class MapView {
       ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = "#10131a"; ctx.fillRect(x + 10, y - 11, 15, 17);
       ctx.fillStyle = "#fff"; ctx.font = "12px system-ui"; ctx.fillText(String(i + 1), x + 14, y + 2);
+    }
+  }
+
+  paintTrailTile(cache, tile, target, matrix, mode, pinned) {
+    const ctx = target.getContext("2d");
+    const x = cache.scene ? tile.x : 0, y = cache.scene ? tile.y : 0;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.beginPath(); ctx.rect(x, y, tile.width, tile.height); ctx.clip();
+    ctx.setTransform(cache.rx, 0, 0, cache.ry, x - tile.x, y - tile.y);
+    this.drawMap(ctx);
+    if (mode !== "full") this.drawReferences(ctx);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const scratch = cache.scratch.getContext("2d");
+    for (const state of cache.states) {
+      const history = this.tileHistory(cache, state, tile, matrix, pinned);
+      const live = state.liveTiles.includes(tile.id) ? state.live : null;
+      if (!history && !live) continue;
+      // Other players often stand still while one player's mutable tail changes.
+      // Reuse their already-colored tile instead of tinting both masks every frame.
+      if (history && history.paintedComplete === history.complete && history.paintedLive === live) {
+        ctx.drawImage(history.canvases[2], cache.halo, cache.halo, tile.width, tile.height,
+          x, y, tile.width, tile.height);
+        continue;
+      }
+      const player = history?.canvases[2].getContext("2d");
+      if (player) player.clearRect(0, 0, cache.side, cache.side);
+      // Union the completed and mutable masks BEFORE applying each color. Painting
+      // outline/fill block-by-block would blacken older colored self-intersections.
+      for (let pass = 0; pass < 2; pass++) {
+        scratch.setTransform(1, 0, 0, 1, 0, 0);
+        scratch.clearRect(0, 0, cache.side, cache.side);
+        if (history) scratch.drawImage(history.canvases[pass], 0, 0);
+        if (live) {
+          scratch.setTransform(cache.rx, 0, 0, cache.ry, cache.halo - tile.x, cache.halo - tile.y);
+          scratch.lineJoin = scratch.lineCap = "round";
+          scratch.lineWidth = pass ? 2.5 : 5;
+          scratch.strokeStyle = "#fff";
+          scratch.stroke(state.live);
+          scratch.setTransform(1, 0, 0, 1, 0, 0);
+        }
+        scratch.globalCompositeOperation = "source-in";
+        scratch.fillStyle = pass ? (this.editing ? "#ff70da" : this.playerColor(state.route.netId)) : "#10131a";
+        scratch.fillRect(0, 0, cache.side, cache.side);
+        scratch.globalCompositeOperation = "source-over";
+        if (player) player.drawImage(cache.scratch, 0, 0);
+        else ctx.drawImage(cache.scratch, cache.halo, cache.halo, tile.width, tile.height,
+          x, y, tile.width, tile.height);
+      }
+      if (history) {
+        history.paintedComplete = history.complete;
+        history.paintedLive = live;
+        ctx.drawImage(history.canvases[2], cache.halo, cache.halo, tile.width, tile.height,
+          x, y, tile.width, tile.height);
+      }
+    }
+    if (mode === "full") {
+      ctx.setTransform(cache.rx, 0, 0, cache.ry, x - tile.x, y - tile.y);
+      this.drawReferences(ctx);
+    }
+    ctx.restore();
+  }
+
+  draw(ctx, frameIndex, trailMode) {
+    const mode = !this.transform ? "off" : this.showRoute ? "full" : trailMode;
+    const matrix = this.transform ? this.routeMatrix() : null;
+    const backing = ctx.getTransform();
+    const cache = this.getRasterCache(mode, frameIndex, matrix, backing.a, backing.d);
+    if (cache) {
+      const count = cache.columns * cache.rows;
+      const tiles = cache.scene ? cache.dirty : Array.from({ length: count }, (_, i) => i);
+      for (const id of tiles) {
+        const x = id % cache.columns * TRAIL_TILE_SIZE, y = Math.floor(id / cache.columns) * TRAIL_TILE_SIZE;
+        const tile = { id, x, y, width: Math.min(TRAIL_TILE_SIZE, cache.width - x),
+          height: Math.min(TRAIL_TILE_SIZE, cache.height - y) };
+        let output = cache.outputs.get(id);
+        if (!cache.scene && !output) {
+          output = this.rasterResource(cache, tile.width, tile.height, 1, cache.outputs, id);
+          cache.dirty.add(id);
+        }
+        if (output) this.touchRaster(cache, output);
+        if (cache.dirty.has(id)) {
+          this.paintTrailTile(cache, tile, cache.scene || output.canvases[0], matrix, mode, output);
+          cache.dirty.delete(id);
+        }
+        if (!cache.scene) ctx.drawImage(output.canvases[0], x / cache.rx, y / cache.ry,
+          tile.width / cache.rx, tile.height / cache.ry);
+      }
+      if (cache.scene) ctx.drawImage(cache.scene, 0, 0, cache.width / cache.rx, cache.height / cache.ry);
+    } else {
+      // Degenerate/extraordinary backing sizes still render correctly without allocating
+      // a bitmap larger than the budget. Normal/high-DPR viewports use the paths above.
+      this.drawMap(ctx);
+      if (mode !== "full") this.drawReferences(ctx);
+      if (mode === "persistent" || mode === "full") {
+        for (const route of this.routes) {
+          this.prepareRoute(route, this.routeTolerance(matrix));
+          const end = mode === "full" ? route.samples.length : this.sampleEnd(route.samples, frameIndex);
+          const path = new Path2D(), complete = Math.floor(end / ROUTE_BLOCK_SIZE);
+          for (let i = 0; i < complete; i++) path.addPath(route.blocks[i].path);
+          if (end % ROUTE_BLOCK_SIZE) path.addPath(this.simplifiedPath(route.samples,
+            complete * ROUTE_BLOCK_SIZE, end, route.tolerance));
+          this.strokeRoute(ctx, path, matrix, this.editing ? "#ff70da" : this.playerColor(route.netId));
+        }
+      }
+      if (mode === "full") this.drawReferences(ctx);
+    }
+    if (mode === "recent") {
+      for (const route of this.routes) {
+        this.strokeRoute(ctx, this.recentPath(route, frameIndex), matrix, this.playerColor(route.netId));
+      }
     }
   }
 

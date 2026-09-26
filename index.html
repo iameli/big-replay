@@ -262,8 +262,16 @@ try {
   const savedTrail = localStorage.getItem(TRAIL_STORAGE);
   if (["off", "recent", "persistent"].includes(savedTrail)) trailMode = savedTrail;
 } catch { /* Browser preferences are optional; the viewer still works offline. */ }
-const playerIcon = new Path2D(document.getElementById("player-symbol").getAttribute("d"));
-const gourdIcon = new Path2D(document.getElementById("gourd-symbol").getAttribute("d"));
+const playerIcon = markerArtwork("player-symbol");
+const gourdIcon = markerArtwork("gourd-symbol");
+// One LRU for artwork and labels: at most 256 entries / 16 MiB of RGBA pixels.
+// Oversized names (including keys over 2,048 UTF-16 units) use complete uncached text.
+const markerSprites = new Map();
+const MAX_SPRITE_BYTES = 16 * 1024 * 1024, MAX_SPRITE_ENTRIES = 256;
+const MAX_SINGLE_SPRITE_BYTES = 1024 * 1024, MAX_SPRITE_SIDE = 4096;
+const labelFont = "bold 12px system-ui";
+const labelMeasure = new OffscreenCanvas(1, 1).getContext("2d");
+let markerSpriteBytes = 0, markerSpriteDpr = devicePixelRatio, markerLabelDirection = "ltr";
 
 let replay = null, frames = [], events = [], frameIdx = 0, playing = false, speed = 1;
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
@@ -393,6 +401,7 @@ async function parseBuffer(buf, name) {
     return;
   }
   replay = parsed;
+  resetMarkerSprites();
   frames = replay.frames || [];
   events = replay.events || [];
   if (!frames.length) { alert("no frames in replay"); return; }
@@ -430,6 +439,11 @@ function toScreen(x, z) {
 }
 
 function size() {
+  markerLabelDirection = getComputedStyle(canvas).direction;
+  if (markerSpriteDpr !== devicePixelRatio) {
+    resetMarkerSprites();
+    markerSpriteDpr = devicePixelRatio;
+  }
   const width = Math.round(canvas.clientWidth * devicePixelRatio);
   const height = Math.round(canvas.clientHeight * devicePixelRatio);
   if (canvas.width !== width || canvas.height !== height) {
@@ -440,30 +454,150 @@ function size() {
 }
 
 // ---------- rendering ----------
-function drawIcon(path, x, y, color, scale = 1) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(scale, scale);
-  ctx.lineJoin = ctx.lineCap = "round";
-  ctx.strokeStyle = "#10131a";
-  ctx.lineWidth = 6;
-  ctx.stroke(path);
-  ctx.strokeStyle = "#f4f7ff";
-  ctx.lineWidth = 2.5;
-  ctx.stroke(path);
-  ctx.fillStyle = color;
-  ctx.fill(path);
-  ctx.restore();
+function markerArtwork(id) {
+  const element = document.getElementById(id);
+  let bounds = null;
+  try {
+    const box = element.getBBox();
+    if ([box.x, box.y, box.width, box.height].every(Number.isFinite) && box.width > 0 && box.height > 0) {
+      bounds = { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height };
+    }
+  } catch { /* An unavailable SVG bounding box uses the original vector drawing. */ }
+  return { id, path: new Path2D(element.getAttribute("d")), bounds };
+}
+
+function resetMarkerSprites() {
+  for (const sprite of markerSprites.values()) sprite.canvas.width = sprite.canvas.height = 0;
+  markerSprites.clear();
+  markerSpriteBytes = 0;
+}
+
+function cachedMarkerSprite(key) {
+  const sprite = markerSprites.get(key);
+  if (sprite) {
+    markerSprites.delete(key);
+    markerSprites.set(key, sprite);
+  }
+  return sprite;
+}
+
+function makeMarkerSprite(key, left, top, right, bottom, paint) {
+  const dpr = markerSpriteDpr;
+  // Two physical pixels beyond the complete stroke prevent antialias clipping.
+  const x = Math.floor(left * dpr) - 2, y = Math.floor(top * dpr) - 2;
+  const width = Math.ceil(right * dpr) + 2 - x, height = Math.ceil(bottom * dpr) + 2 - y;
+  const bytes = width * height * 4;
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0 ||
+      width > MAX_SPRITE_SIDE || height > MAX_SPRITE_SIDE || bytes > MAX_SINGLE_SPRITE_BYTES) return null;
+  while (markerSprites.size >= MAX_SPRITE_ENTRIES || markerSpriteBytes + bytes > MAX_SPRITE_BYTES) {
+    const oldestKey = markerSprites.keys().next().value;
+    const oldest = markerSprites.get(oldestKey);
+    markerSpriteBytes -= oldest.bytes;
+    oldest.canvas.width = oldest.canvas.height = 0;
+    markerSprites.delete(oldestKey);
+  }
+  const bitmap = new OffscreenCanvas(width, height);
+  const target = bitmap.getContext("2d");
+  target.setTransform(dpr, 0, 0, dpr, -x, -y);
+  paint(target);
+  const sprite = { canvas: bitmap, x: x / dpr, y: y / dpr, width: width / dpr, height: height / dpr, bytes };
+  markerSprites.set(key, sprite);
+  markerSpriteBytes += bytes;
+  return sprite;
+}
+
+function blitMarkerSprite(sprite, x, y) {
+  // Alpha is baked per stroke/fill, not applied to the flattened result: locked
+  // gourds retain the original overlapping translucent white/dark outlines.
+  const alpha = ctx.globalAlpha;
+  ctx.globalAlpha = 1;
+  ctx.drawImage(sprite.canvas, x + sprite.x, y + sprite.y, sprite.width, sprite.height);
+  ctx.globalAlpha = alpha;
+}
+
+function paintIcon(target, path, color, scale) {
+  target.scale(scale, scale);
+  target.lineJoin = target.lineCap = "round";
+  target.strokeStyle = "#10131a";
+  target.lineWidth = 6;
+  target.stroke(path);
+  target.strokeStyle = "#f4f7ff";
+  target.lineWidth = 2.5;
+  target.stroke(path);
+  target.fillStyle = color;
+  target.fill(path);
+}
+
+function drawIcon(artwork, x, y, color, scale = 1) {
+  const alpha = ctx.globalAlpha;
+  // The artwork ID also identifies the fixed round joins and two outline styles.
+  const key = `icon|${artwork.id}|${color}|${scale}|${alpha}|${markerSpriteDpr}`;
+  let sprite = cachedMarkerSprite(key);
+  if (!sprite && artwork.bounds) {
+    const b = artwork.bounds;
+    sprite = makeMarkerSprite(key, (b.left - 3) * scale, (b.top - 3) * scale,
+      (b.right + 3) * scale, (b.bottom + 3) * scale, target => {
+        target.globalAlpha = alpha;
+        paintIcon(target, artwork.path, color, scale);
+      });
+  }
+  if (sprite) {
+    blitMarkerSprite(sprite, x, y);
+  } else {
+    ctx.save();
+    ctx.translate(x, y);
+    paintIcon(ctx, artwork.path, color, scale);
+    ctx.restore();
+  }
+}
+
+function labelStyle(target, color, direction) {
+  target.font = labelFont;
+  target.textAlign = "start";
+  target.textBaseline = "alphabetic";
+  target.direction = direction;
+  target.lineJoin = "round";
+  target.lineWidth = 4;
+  target.strokeStyle = "#10131a";
+  target.fillStyle = color;
+}
+
+function drawPlayerLabel(text, x, y, color) {
+  const direction = ctx.direction === "inherit" ? markerLabelDirection : ctx.direction;
+  const alpha = ctx.globalAlpha;
+  const key = text.length <= 2048 ? `label|${labelFont}|${direction}|${color}|${alpha}|${markerSpriteDpr}|${text}` : null;
+  let sprite = key === null ? null : cachedMarkerSprite(key);
+  if (!sprite && key !== null) {
+    labelStyle(labelMeasure, color, direction);
+    const metrics = labelMeasure.measureText(text);
+    // Actual ink extents include negative bearings, combining marks and RTL text;
+    // measureText().width alone would clip these or shift the alphabetic baseline.
+    sprite = makeMarkerSprite(key, -metrics.actualBoundingBoxLeft - 2, -metrics.actualBoundingBoxAscent - 2,
+      metrics.actualBoundingBoxRight + 2, metrics.actualBoundingBoxDescent + 2, target => {
+        labelStyle(target, color, direction);
+        target.globalAlpha = alpha;
+        target.strokeText(text, 0, 0);
+        target.fillText(text, 0, 0);
+      });
+  }
+  if (sprite) {
+    blitMarkerSprite(sprite, x, y);
+  } else {
+    ctx.save();
+    labelStyle(ctx, color, direction);
+    ctx.strokeText(text, x, y);
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
 }
 
 function render() {
   size();
-  mapView.draw(ctx);
+  mapView.draw(ctx, frameIdx, trailMode);
   if (!replay || !mapView.transform || mapView.editing) return;
   const fr = frames[frameIdx];
   if (!fr) return;
   const h = replay.header;
-  mapView.drawTrails(ctx, frameIdx, trailMode);
   // landmarks
   ctx.fillStyle = "#aab8cc";
   ctx.strokeStyle = "#10131a";
@@ -506,14 +640,8 @@ function render() {
     // Recorded yaw in current real captures is only 0/pi, not a reliable heading.
     // Do not draw a facing arrow until the recorder's yaw contract is corrected.
     // label
-    ctx.font = "bold 12px system-ui";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = "#10131a";
-    ctx.fillStyle = p.drowsy ? "#ffd447" : color;
     const label = `${playerLabel(p.netId)}${p.drowsy ? " · sleepy" : ""}`;
-    ctx.strokeText(label, sx + 17, sy - 8);
-    ctx.fillText(label, sx + 17, sy - 8);
+    drawPlayerLabel(label, sx + 17, sy - 8, p.drowsy ? "#ffd447" : color);
   }
 }
 

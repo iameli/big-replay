@@ -206,13 +206,28 @@ removes future movement; missing player samples break the line rather than drawi
 a jump. The trail mode is remembered in this browser. **Show full player routes**
 under alignment is separate: it deliberately includes future positions as well.
 
-Persistent trails and full routes use cached, zoom-aware geometry with at most
-**0.25 CSS pixels** of simplification error. Recorded positions are unchanged.
-During forward playback, only the current partial block needs fresh simplification;
-completed blocks are reused. Zooming and alignment changes select the required
-detail level. Hidden alignment reference controls are not rebuilt on every frame.
+Persistent trails and full routes retain the **0.25 CSS pixel** simplification
+bound. Completed blocks are rasterized into 256-device-pixel tiles; normal forward
+playback updates only tiles affected by new movement or revisions to the current
+partial block. Per-player outline/fill masks preserve self-intersections and player
+overlap order. Already-colored player tiles are reused when another player moves.
+The map and trails are composited into cached scene pixels rather than redrawing
+all accumulated history each frame.
 
-Viewer geometry regression checks require Node.js but no packages:
+The map/trail bitmap cache has a **64 MiB RGBA pixel budget**, including its scene,
+scratch, and retained tiles. Large viewports use evictable scene tiles instead of
+an oversized scene bitmap. Markers and labels use a separate **16 MiB / 256-entry**
+sprite cache at the display pixel ratio; oversized labels render uncached rather
+than truncating names. These budgets do not include replay/geometry data, the
+decoded source map, or browser overhead.
+
+Backward seeks, pan/zoom, resizing or pixel-ratio changes, alignment edits, color
+changes, and trail-mode changes rebuild the relevant cached pixels. Cold views
+and seeks can still take longer than steady playback. Loading another replay
+releases the previous bitmaps. Recorded positions and replay files are unchanged.
+Hidden alignment reference controls are not rebuilt on every frame.
+
+Geometry and cache-lifecycle regression checks require Node.js but no packages:
 `node --test scripts/map-trails.test.cjs`. They also run before Pages deployment.
 
 **Player colors** lists every player in the recording, even before they join or
