@@ -13,6 +13,8 @@ public sealed class ReplayWriter : IDisposable
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // a stray NaN/Infinity from a bad read must never kill a run: serialize as a literal
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
     private readonly GZipStream _gz;

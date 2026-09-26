@@ -118,6 +118,13 @@ public static class UnityInternals
         float cosYaw = 1 - 2 * (qy * qy + qz * qz);
         yaw = (float)Math.Atan2(sinYaw, cosYaw);
 
+        // garbage pointers can produce NaN/Infinity during scene churn with a full lobby;
+        // treat non-finite results as a failed read so the recorder skips the sample entry
+        if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z) || !float.IsFinite(yaw))
+        {
+            return false;
+        }
+
         x = wx; y = wy; z = wz;
         return true;
     }

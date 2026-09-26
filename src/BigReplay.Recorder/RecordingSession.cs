@@ -22,18 +22,24 @@ public static class RecordingSession
         {
             throw new ArgumentException("Rate and duration must be finite.");
         }
+        // Never overwrite a previous run (finished or stranded .partial); pick the next free name.
         string partialPath = outPath + ".partial";
-        // Never overwrite a previous run. Only finished gzip/JSON files get the replay extension.
-        if (File.Exists(outPath))
+        int suffix = 1;
+        while (File.Exists(outPath) || File.Exists(partialPath))
         {
-            throw new IOException($"A replay already exists at {outPath}.");
+            string dir = Path.GetDirectoryName(outPath) ?? "";
+            string name = Path.GetFileNameWithoutExtension(outPath);
+            string ext = Path.GetExtension(outPath);
+            outPath = Path.Combine(dir, $"{name}-{suffix}{ext}");
+            partialPath = outPath + ".partial";
+            suffix++;
         }
         using var file = new FileStream(partialPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
         using var writer = new ReplayWriter(file);
         long frames = 0;
-        double lastStatus = -1;
+        int failedSamples = 0;
         var events = new List<ReplayEvent>();
-
+        double lastStatus = -1;
         var clock = Stopwatch.StartNew();
         double interval = 1.0 / rate;
         double next = 0;
@@ -54,9 +60,12 @@ public static class RecordingSession
                     continue;
                 }
                 next = t + interval;
-                if (reader.Game.HasExited) break;
-                bool active = reader.IsServerActive();
-                var players = reader.ReadPlayers();
+                try
+                {
+                    if (reader.Game.HasExited) break;
+                    bool active = reader.IsServerActive();
+                    var players = reader.ReadPlayers();
+
 
                 if (t - lastStatus >= 1)
                 {
@@ -173,6 +182,23 @@ public static class RecordingSession
                 // No header is written until players arrive, so idle menus never split.
                 // Keep the final empty-player frame and its leave/end events in this replay.
                 if (players.Count == 0) break;
+                }
+                catch (Exception ex)
+                {
+                    // One bad sample (transient NaN, mid-scene garbage, process blip) must never
+                    // kill a run: log, skip, keep going. Give up only after a sustained failure
+                    // storm (e.g. the game died mid-read) so we don't record garbage.
+                    failedSamples++;
+                    if (failedSamples <= 3)
+                    {
+                        Console.Error.WriteLine($"  sample failed (skipping): {ex.Message}");
+                    }
+                    if (failedSamples > Math.Max(30, rate * 30))
+                    {
+                        Console.Error.WriteLine("  too many failed samples; stopping.");
+                        break;
+                    }
+                }
             }
         }
         finally
