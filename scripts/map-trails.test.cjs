@@ -382,3 +382,55 @@ test('raster eviction releases storage, protects the active output, and bounds h
   assert.equal(large.scene, null, 'oversized viewports must use evictable scene tiles');
   assert.ok(large.bytes <= budget);
 });
+
+test('zoom bursts preserve successive cursor anchors and settle only the latest view', () => {
+  const pending = new Map();
+  let nextTimer = 0;
+  const PreviewView = runInNewContext(
+    readFileSync(join(__dirname, '../map-view.js'), 'utf8') + '\nMapView', {
+      devicePixelRatio: 1,
+      setTimeout(callback) { pending.set(++nextTimer, callback); return nextTimer; },
+      clearTimeout(id) { pending.delete(id); },
+    });
+  const view = Object.assign(Object.create(PreviewView.prototype), makeView());
+  const listeners = new Map(), rendered = [];
+  view.canvas.style = {};
+  view.canvas.parentElement = {
+    getBoundingClientRect: () => ({ left: 200, top: 30 }),
+    addEventListener: (type, listener) => listeners.set(type, listener),
+  };
+  view.redraw = () => rendered.push({
+    zoom: view.zoom, deferred: view.deferRender(), transform: view.canvas.style.transform,
+  });
+  view.bindPointer();
+  const wheel = (x, y, deltaY, ctrlKey = false) => listeners.get('wheel')({
+    clientX: x + 200, clientY: y + 30, deltaY, ctrlKey, preventDefault() {},
+  });
+  for (const [x, y, delta, pinch] of [[180, 220, -180, false], [600, 90, -12, true],
+    [40, 500, 80, false]]) {
+    const before = view.screenToImage(x, y);
+    wheel(x, y, delta, pinch);
+    const after = view.screenToImage(x, y);
+    assert.ok(Math.hypot(after[0] - before[0], after[1] - before[1]) < 1e-9,
+      'each zoom must keep the map point under its own cursor, not a transformed canvas origin');
+    assert.equal(view.deferRender(), true, 'playback must not force a rebuild during the gesture');
+    assert.equal(rendered.length, 0, 'wheel input must not synchronously rasterize the new view');
+    assert.equal(pending.size, 1, 'a burst must coalesce into one final render');
+  }
+  const zoom = view.zoom, finish = [...pending.values()][0];
+  pending.clear();
+  finish();
+  assert.deepEqual(rendered, [{ zoom, deferred: false, transform: '' }],
+    'the final view must render once, without leaving its preview transform applied');
+
+  wheel(200, 100, -100);
+  view.canvas.clientWidth++;
+  assert.equal(view.deferRender(), false, 'resize must discard the old-sized preview');
+  assert.equal(pending.size, 0, 'resize must cancel the stale scheduled redraw');
+  assert.equal(view.canvas.style.transform, '');
+
+  wheel(200, 100, -100);
+  view.setReplay([]);
+  assert.equal(view.deferRender(), false, 'replacement replays must not retain old preview pixels');
+  assert.equal(pending.size, 0, 'replacement replays must cancel the old scheduled redraw');
+});

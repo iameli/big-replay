@@ -221,6 +221,14 @@ replay frame; returning tiles also incorporate movement recorded while offscreen
 Padded tiles and a grid-aligned scene prevent seams during fractional-pixel pans.
 Tile indexes are built only for retained tiles, not for the entire zoomed map.
 
+Wheel and trackpad-pinch zoom immediately rescale the last canvas image around the
+cursor. After **120 ms** without another zoom change, the viewer renders the latest
+replay frame sharply at the new scale. Markers, labels, and trail widths temporarily
+scale with the preview, then return to their normal screen sizes. Playback time
+continues advancing during the gesture. Zooming out can briefly expose empty
+margins until the final render fills newly visible areas. Fit map, starting a pan,
+resizing/pixel-ratio changes, and loading another replay discard the pending preview.
+
 The map/trail bitmap cache has a **64 MiB RGBA pixel budget**, including its scene,
 scratch, and retained tiles. Large viewports use evictable scene tiles instead of
 an oversized scene bitmap. Markers and labels use a separate **16 MiB / 256-entry**

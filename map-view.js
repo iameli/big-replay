@@ -95,6 +95,7 @@ class MapView {
       this.save();
     });
     document.getElementById("fit-map").addEventListener("click", () => {
+      this.cancelZoomPreview();
       this.zoom = 1; this.panX = this.panY = 0; redraw();
     });
     this.bindRouteControls(pause);
@@ -156,6 +157,7 @@ class MapView {
   }
 
   setReplay(frames) {
+    this.cancelZoomPreview();
     if (this.editing) this.cancelRoute();
     const routes = new Map();
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
@@ -816,15 +818,41 @@ class MapView {
     }
   }
 
+  cancelZoomPreview() {
+    if (!this.zoomPreview) return;
+    clearTimeout(this.zoomTimer);
+    this.zoomTimer = null;
+    this.zoomPreview = null;
+    this.canvas.style.transform = "";
+  }
+
+  deferRender() {
+    const preview = this.zoomPreview;
+    if (!preview) return false;
+    if (preview.width !== this.canvas.clientWidth || preview.height !== this.canvas.clientHeight ||
+        preview.dpr !== devicePixelRatio) {
+      this.cancelZoomPreview();
+      return false;
+    }
+    const { scale, ox, oy } = this.viewport(), ratio = scale / preview.scale;
+    this.canvas.style.transform =
+      `translate(${ox - ratio * preview.ox}px, ${oy - ratio * preview.oy}px) scale(${ratio})`;
+    return true;
+  }
+
   bindPointer() {
-    const canvas = this.canvas;
+    const canvas = this.canvas, surface = canvas.parentElement;
     let drag = null;
     const local = e => {
-      const r = canvas.getBoundingClientRect();
+      const r = surface.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
     };
-    canvas.addEventListener("pointerdown", e => {
-      if (e.button !== 0) return;
+    surface.addEventListener("pointerdown", e => {
+      if (e.button !== 0 || (e.target !== canvas && e.target !== surface)) return;
+      if (this.zoomPreview) {
+        this.cancelZoomPreview();
+        this.redraw();
+      }
       const [x, y] = local(e);
       drag = {
         x, y, px: this.panX, py: this.panY, moved: false,
@@ -833,9 +861,9 @@ class MapView {
         offsetX: this.routeInputs["offset-x"].valueAsNumber,
         offsetY: this.routeInputs["offset-y"].valueAsNumber,
       };
-      canvas.setPointerCapture(e.pointerId);
+      surface.setPointerCapture(e.pointerId);
     });
-    canvas.addEventListener("pointermove", e => {
+    surface.addEventListener("pointermove", e => {
       const [x, y] = local(e);
       if (drag) {
         if (Math.hypot(x - drag.x, y - drag.y) > 4) drag.moved = true;
@@ -859,11 +887,11 @@ class MapView {
       }
       document.getElementById("coordinates").textContent = text;
     });
-    canvas.addEventListener("pointerup", e => {
+    surface.addEventListener("pointerup", e => {
       if (!drag) return;
       const clicked = !drag.moved;
       drag = null;
-      canvas.releasePointerCapture(e.pointerId);
+      surface.releasePointerCapture(e.pointerId);
       if (!clicked || !this.pending) return;
       const [u, v] = this.screenToImage(...local(e));
       if (u < 0 || v < 0 || u > MAP_SIZE || v > MAP_SIZE) {
@@ -882,16 +910,31 @@ class MapView {
         this.save();
       } catch (err) { this.status.textContent = err.message; }
     });
-    canvas.addEventListener("pointercancel", () => { drag = null; });
-    canvas.addEventListener("wheel", e => {
+    surface.addEventListener("pointercancel", () => { drag = null; });
+    surface.addEventListener("wheel", e => {
       e.preventDefault();
       const [x, y] = local(e), [u, v] = this.screenToImage(x, y);
       // Chromium reports trackpad pinch as small Ctrl+wheel deltas.
       const sensitivity = e.ctrlKey ? 0.01 : 0.001;
-      this.zoom = Math.min(16, Math.max(1, this.zoom * Math.exp(-e.deltaY * sensitivity)));
+      const zoom = Math.min(16, Math.max(1, this.zoom * Math.exp(-e.deltaY * sensitivity)));
+      if (zoom === this.zoom) return;
+      if (!this.zoomPreview) {
+        this.zoomPreview = {
+          ...this.viewport(), width: canvas.clientWidth, height: canvas.clientHeight,
+          dpr: devicePixelRatio,
+        };
+      }
+      this.zoom = zoom;
       const [nx, ny] = this.imageToScreen(u, v);
       this.panX += x - nx; this.panY += y - ny;
-      this.redraw();
+      this.deferRender();
+      clearTimeout(this.zoomTimer);
+      // Keep wheel/pinch bursts on the compositor; render the latest state after
+      // a short pause. Playback still advances while its last image is previewed.
+      this.zoomTimer = setTimeout(() => {
+        this.cancelZoomPreview();
+        this.redraw();
+      }, 120);
     }, { passive: false });
   }
 }
