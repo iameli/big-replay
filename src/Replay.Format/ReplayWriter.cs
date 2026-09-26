@@ -32,20 +32,19 @@ public sealed class ReplayWriter : IDisposable
         _sw.Write(JsonSerializer.Serialize(header, Json));
         _sw.Write(",\"frames\":[");
     }
-
     public void WriteFrame(ReplayFrame frame)
     {
-        if (_first)
-        {
-            _first = false;
-        }
-        else
+        // Serialize the frame BEFORE emitting the array delimiter: a mid-frame failure must
+        // never strand a trailing "," (a crashed frame then leaves a clean "]" from Finish).
+        string json = JsonSerializer.Serialize(frame, Json);
+        if (!_first)
         {
             _sw.Write(',');
         }
-        _sw.Write(JsonSerializer.Serialize(frame, Json));
+        _first = false;
+        _sw.Write(json);
+        _sw.Flush();
     }
-
     private bool _first = true;
 
     public void Finish(List<ReplayEvent>? events = null)
