@@ -270,8 +270,12 @@ const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
 const scrub = document.getElementById("scrub"), timeEl = document.getElementById("time");
 const playBtn = document.getElementById("play"), trailSelect = document.getElementById("trail-mode");
 const eventsEl = document.getElementById("events"), towersEl = document.getElementById("towers");
+const alignmentPanel = document.getElementById("alignment"), statusEl = document.getElementById("status");
 const mapView = new MapView(canvas, render, () => setPlaying(false), playerColor, playerLabel);
 trailSelect.value = trailMode;
+alignmentPanel.addEventListener("toggle", () => {
+  if (alignmentPanel.open && replay) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
+});
 
 function playerColor(netId) {
   return PLAYER_PALETTE[playerColorAssignments.get(netId) ?? 0].color;
@@ -518,8 +522,9 @@ function tick() {
   if (!replay) return;
   const fr = frames[frameIdx];
   scrub.value = frameIdx;
-  timeEl.textContent = fmt(fr.time);
-  mapView.setSources(fr, replay.header.landmarks || []);
+  const time = fmt(fr.time);
+  if (timeEl.textContent !== time) timeEl.textContent = time;
+  if (alignmentPanel.open) mapView.setSources(fr, replay.header.landmarks || []);
   render();
   updateStatus(fr);
   updateTowers(fr);
@@ -564,8 +569,8 @@ setInterval(() => {
 
 function updateStatus(fr) {
   const alive = fr.players.filter(p => p.alive).length;
-  document.getElementById("status").textContent =
-    `players ${alive}/${fr.players.length} · gourds ${fr.gourds.length}`;
+  const status = `players ${alive}/${fr.players.length} · gourds ${fr.gourds.length}`;
+  if (statusEl.textContent !== status) statusEl.textContent = status;
 }
 
 function renderTowers() {
@@ -585,7 +590,9 @@ function updateTowers(fr) {
     const n = homes.filter(h => filled.has(h)).length;
     const el = document.querySelector(`#tw-${name} span:last-child`);
     if (!el) continue;
-    el.textContent = `${n}/${homes.length}`;
+    const count = `${n}/${homes.length}`;
+    if (el.textContent === count) continue;
+    el.textContent = count;
     el.parentElement.className = "tower" + (n === homes.length ? " done" : "");
   }
 }

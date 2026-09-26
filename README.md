@@ -206,6 +206,15 @@ removes future movement; missing player samples break the line rather than drawi
 a jump. The trail mode is remembered in this browser. **Show full player routes**
 under alignment is separate: it deliberately includes future positions as well.
 
+Persistent trails and full routes use cached, zoom-aware geometry with at most
+**0.25 CSS pixels** of simplification error. Recorded positions are unchanged.
+During forward playback, only the current partial block needs fresh simplification;
+completed blocks are reused. Zooming and alignment changes select the required
+detail level. Hidden alignment reference controls are not rebuilt on every frame.
+
+Viewer geometry regression checks require Node.js but no packages:
+`node --test scripts/map-trails.test.cjs`. They also run before Pages deployment.
+
 **Player colors** lists every player in the recording, even before they join or
 after they leave. Each player's first readable recorded username is used in this
 list, map labels, join/leave events, and alignment choices, including names that

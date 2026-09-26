@@ -3,6 +3,7 @@
 // Image pixels are the stable intermediate space; viewport changes never change calibration.
 const MAP_SIZE = 4096;
 const MAP_STORAGE = "big-walk:bigmap-4096:calibration:v1";
+const ROUTE_BLOCK_SIZE = 256;
 // Aligned against the full train circuit on bigmap.jpeg.
 const DEFAULT_MAP_TRANSFORM = Object.freeze({
   xx: 1.916268922611503,
@@ -162,18 +163,9 @@ class MapView {
         if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
         let route = routes.get(p.netId);
         if (!route) {
-          route = {
-            netId: p.netId, path: new Path2D(), lastFrame: -2, samples: [],
-            history: new Path2D(), historyEnd: 0,
-          };
+          route = { netId: p.netId, samples: [], tolerance: null };
           routes.set(p.netId, route);
         }
-        if (route.lastFrame === index - 1) route.path.lineTo(p.x, p.z);
-        else {
-          route.path.moveTo(p.x, p.z);
-          route.path.lineTo(p.x, p.z);
-        }
-        route.lastFrame = index;
         route.samples.push([index, p.x, p.z]);
         minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
         minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
@@ -332,6 +324,77 @@ class MapView {
     ctx.restore();
   }
 
+  routeTolerance(matrix) {
+    // Largest affine stretch: also bounds error for sheared/non-uniform alignments.
+    const stretch = (Math.hypot(matrix.a + matrix.d, matrix.b - matrix.c) +
+      Math.hypot(matrix.a - matrix.d, matrix.b + matrix.c)) / 2;
+    // At most 1/4 CSS pixel of deviation; quantize so panning/small zooms reuse geometry.
+    return 2 ** Math.floor(Math.log2(0.25 / stretch));
+  }
+
+  simplifiedPath(samples, start, end, tolerance) {
+    const path = new Path2D(), stack = [];
+    if (start >= end) return path;
+    // Adjacent blocks share their boundary segment, but never bridge a missing frame.
+    if (start > 0 && samples[start - 1][0] === samples[start][0] - 1) start--;
+    const limit = tolerance * tolerance;
+    while (start < end) {
+      let last = start;
+      while (last + 1 < end && samples[last + 1][0] === samples[last][0] + 1) last++;
+      path.moveTo(samples[start][1], samples[start][2]);
+      stack.push(start, last);
+      // Iterative Ramer–Douglas–Peucker, bounded to one block rather than the whole run.
+      while (stack.length) {
+        const b = stack.pop(), a = stack.pop();
+        const x = samples[a][1], z = samples[a][2];
+        const dx = samples[b][1] - x, dz = samples[b][2] - z;
+        const length = dx * dx + dz * dz;
+        let farthest = -1, distance = limit;
+        for (let i = a + 1; i < b; i++) {
+          const px = samples[i][1] - x, pz = samples[i][2] - z;
+          const t = length ? Math.max(0, Math.min(1, (px * dx + pz * dz) / length)) : 0;
+          const ex = px - t * dx, ez = pz - t * dz, squared = ex * ex + ez * ez;
+          if (squared > distance) { distance = squared; farthest = i; }
+        }
+        if (farthest < 0) path.lineTo(samples[b][1], samples[b][2]);
+        else stack.push(farthest, b, a, farthest);
+      }
+      start = last + 1;
+    }
+    return path;
+  }
+
+  prepareRoute(route, tolerance) {
+    if (route.tolerance === tolerance) return;
+    route.tolerance = tolerance;
+    route.blocks = [];
+    route.path = null;
+    route.history = new Path2D();
+    route.historyBlocks = 0;
+    for (let start = 0; start < route.samples.length; start += ROUTE_BLOCK_SIZE) {
+      route.blocks.push(this.simplifiedPath(route.samples, start,
+        Math.min(start + ROUTE_BLOCK_SIZE, route.samples.length), tolerance));
+    }
+  }
+
+  persistentPath(route, end, tolerance) {
+    this.prepareRoute(route, tolerance);
+    const blocks = Math.floor(end / ROUTE_BLOCK_SIZE);
+    if (blocks < route.historyBlocks) {
+      route.history = new Path2D();
+      route.historyBlocks = 0;
+    }
+    while (route.historyBlocks < blocks) {
+      route.history.addPath(route.blocks[route.historyBlocks++]);
+    }
+    const path = new Path2D(route.history);
+    // Simplify only the recorded prefix of the live block: no future positions leak in.
+    if (end % ROUTE_BLOCK_SIZE) {
+      path.addPath(this.simplifiedPath(route.samples, blocks * ROUTE_BLOCK_SIZE, end, tolerance));
+    }
+    return path;
+  }
+
   appendSamples(path, samples, start, end) {
     for (let i = start; i < end; i++) {
       const [frame, x, z] = samples[i];
@@ -343,6 +406,7 @@ class MapView {
   drawTrails(ctx, frameIndex, mode) {
     if (mode === "off" || this.showRoute) return;
     const matrix = this.routeMatrix();
+    const tolerance = mode === "persistent" ? this.routeTolerance(matrix) : 0;
     for (const route of this.routes) {
       const samples = route.samples;
       // Find the current prefix without scanning the entire recording each render.
@@ -355,13 +419,7 @@ class MapView {
       const end = lo;
       let path;
       if (mode === "persistent") {
-        if (end < route.historyEnd) {
-          route.history = new Path2D();
-          route.historyEnd = 0;
-        }
-        this.appendSamples(route.history, samples, route.historyEnd, end);
-        route.historyEnd = end;
-        path = route.history;
+        path = this.persistentPath(route, end, tolerance);
       } else {
         let start = end;
         while (start > 0 && samples[start - 1][0] >= frameIndex - 40) start--;
@@ -382,7 +440,13 @@ class MapView {
     if (this.ready) ctx.drawImage(this.image, ox, oy, MAP_SIZE * scale, MAP_SIZE * scale);
     if (this.transform && this.showRoute) {
       const matrix = this.routeMatrix();
+      const tolerance = this.routeTolerance(matrix);
       for (const route of this.routes) {
+        this.prepareRoute(route, tolerance);
+        if (!route.path) {
+          route.path = new Path2D();
+          for (const block of route.blocks) route.path.addPath(block);
+        }
         this.strokeRoute(ctx, route.path, matrix, this.editing ? "#ff70da" : this.playerColor(route.netId));
       }
     }
