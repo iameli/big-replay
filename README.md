@@ -179,10 +179,15 @@ Drag the map to pan, scroll or pinch to zoom around the cursor, and use **Fit ma
 to reset the view. Trackpad pinch has higher sensitivity than ordinary scrolling.
 Playback starts paused; the timeline selects exact recorded frames. Playback and
 the clock use recorded timestamps rather than assuming uniform samples.
+Play/pause, the wide timeline, the current time, and playback-speed buttons sit in
+an always-visible bar across the bottom of the window, below both the map and
+sidebar. On narrow screens the speed buttons wrap onto a second row. The map and
+sidebar resize above the bar, so it does not cover the map or its controls.
 
-The sidebar groups Playback, Player names & colors, Tower progress, Map alignment, and
+The sidebar groups Map display, Player names & colors, Tower progress, Map alignment, and
 Events into collapsible sections. Click a heading, or focus it and press Enter
 or Space, to toggle it. Map alignment starts collapsed; the other sections start open.
+**Map display** contains the Trails dropdown and marker legend.
 
 ### Markers, trails, and player names
 
