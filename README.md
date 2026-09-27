@@ -9,7 +9,7 @@ Big Replay is a tool for recording character positions in Big Walk and playing t
 - `src/BigReplay.Recorder/` — CLI + shared capture loop: sample at N Hz, write replay file.
 - `src/BigReplay.Desktop/` — native Windows GUI: watch for the game and record automatically.
 - `schemas/` — JSON Schema for replay files (the contract the web front-end validates against).
-- `index.html`, `map-view.js`, `bigmap.jpeg` — root-level replay viewer and map assets.
+- `index.html`, `map-view.js`, `gourd-receptacles.js`, `bigmap.jpeg` — root-level replay viewer and map assets.
 - `docs/` — format spec + the read-only/no-writes trust story.
 
 ## Status
@@ -168,8 +168,8 @@ release in a new tab without interrupting the viewer.
 Click the **Big Replay** title or its info icon to open **About**. Close the dialog
 with **Close**, Escape, or a click outside it.
 
-For offline use, open the root `index.html` from a checkout. Keep `map-view.js` and
-`bigmap.jpeg` beside it. No build or package install is needed. Alternatively,
+For offline use, open the root `index.html` from a checkout. Keep `map-view.js`,
+`gourd-receptacles.js`, and `bigmap.jpeg` beside it. No build or package install is needed. Alternatively,
 serve the repository root with a static HTTP server and open `/?replay=run1.replay.json.gz`.
 
 Browser-saved calibration and display preferences are per origin; settings from
@@ -203,6 +203,29 @@ Colors are fixed by gourd ID, not recalculated from location or carrying/pinning
 state. Carried-gourd icons use the same color as the corresponding world gourd.
 Locked gourds remain slightly faded; sleepy players are labeled. Existing replays
 need no format changes. Review the ID mapping when supporting a new game build.
+
+The viewer includes **45 fixed gourd receptacles** measured from the completed
+1.5.1 reconciled 12-player recording: Tutorial **4**, Red (west), Green (south),
+Blue (east), and Yellow (north) **5 each**, Black **6**, and Storage **15**.
+These positions are bundled in `gourd-receptacles.js`; they are not inferred from
+the last frame of whichever replay you open. Other game builds may need updated
+coordinates.
+
+Empty receptacles use hollow gourd icons from the start. Each tower/storage group
+has a compact labeled panel, a leader to its map location, and dots at the actual
+slot coordinates; this separates icons whose physical positions are too close
+to read individually. A slot fills red or purple according to the gourd actually
+placed there, and that gourd stops drawing as a separate world/carried marker.
+**Tower progress** uses these same occupied slots, rather than monument flags
+that are absent in some recordings.
+
+Placement means a gourd's recorded **XYZ is within 0.01 world units (1 cm)** of a
+slot, regardless of gourd ID or reported pinning state. Including Y avoids counting
+a gourd above/below the slot. Only observations up to the selected frame count:
+scrubbing backward removes later placements. Missing gourd samples, including
+an empty shutdown frame, retain the last observed placement; an observed move
+away clears it. Loading another replay resets all occupancy. Unobserved slots
+remain empty even when a recording's monument flags claim completion.
 
 The **Trails** dropdown offers **Off**, **Recent** (the last 40 frame intervals),
 and **Persistent · start to now**. Persistent trails retain each player's history

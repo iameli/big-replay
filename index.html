@@ -64,8 +64,7 @@
   .legend { font-size: 11px; color: #8fa3bd; padding: 2px 12px; display: flex; gap: 14px; flex-wrap: wrap; }
   .legend span { display: inline-flex; align-items: center; gap: 4px; }
   .legend svg { width: 20px; height: 26px; overflow: visible; }
-  .legend .lg-slot::before, .legend .lg-land::before { content: ""; display: inline-block; width: 10px; height: 10px; border: 2px solid #10131a; }
-  .lg-slot::before { background: #57d187; border-radius: 2px !important; }
+  .legend .lg-land::before { content: ""; display: inline-block; border: 2px solid #10131a; }
   .lg-land::before { background: #6f7f96; width: 4px !important; height: 4px !important; }
   canvas { touch-action: none; cursor: grab; }
   canvas.placing { cursor: crosshair; }
@@ -151,7 +150,10 @@
       <use href="#gourd-symbol" fill="none" stroke="#10131a" stroke-width="6" stroke-linejoin="round"/>
       <use href="#gourd-symbol" fill="#8053ac" stroke="#f4f7ff" stroke-width="2.5" stroke-linejoin="round" paint-order="stroke fill"/>
     </svg>gourds</span>
-    <span class="lg-slot">monument slot</span><span class="lg-land">landmark</span>
+    <span><svg viewBox="-18 -20 36 40" aria-hidden="true">
+      <use href="#gourd-symbol" fill="none" stroke="#10131a" stroke-width="6" stroke-linejoin="round"/>
+      <use href="#gourd-symbol" fill="none" stroke="#f4f7ff" stroke-width="2.5" stroke-linejoin="round"/>
+    </svg>empty receptacle</span><span class="lg-land">landmark</span>
   </div>
   </details>
   <details class="sidebar-section" id="player-settings" open>
@@ -244,14 +246,11 @@
 </dialog>
 
 <script src="map-view.js"></script>
+<script src="gourd-receptacles.js"></script>
 <script>
 "use strict";
 document.getElementById("about-open").addEventListener("click", () => document.getElementById("about-dialog").showModal());
-const TOWERS = {
-  "Tutorial": [150,151,152,153], "Red": [100,101,102,103,104], "Green": [110,111,112,113,114],
-  "Blue": [120,121,122,123,124], "Yellow": [130,131,132,133,134], "Final": [140,141,142,143,144,145],
-  "Overflow": [160,161,162,163,164,165,166,167,168,169,170,171,172,173,174],
-};
+const receptacles = new GourdReceptacles();
 // SaveablePropName IDs: the seven southernmost gourds after map alignment in the 1.5.1 reference replay.
 const PURPLE_GOURD_IDS = new Set([134, 142, 151, 152, 156, 158, 159]);
 const PLAYER_PALETTE = [
@@ -507,6 +506,7 @@ async function parseBuffer(buf, name) {
   events = replay.events || [];
   if (!frames.length) { alert("no frames in replay"); return; }
   preparePlayers();
+  receptacles.setReplay(frames);
   mapView.setReplay(frames);
   document.getElementById("drop").classList.add("hidden");
   renderTowers();
@@ -692,6 +692,69 @@ function drawPlayerLabel(text, x, y, color) {
   }
 }
 
+function drawReceptacles(occupants) {
+  ctx.save();
+  const width = canvas.clientWidth, height = canvas.clientHeight;
+  const groups = receptacles.groups;
+  for (let gi = 0; gi < groups.length; gi++) {
+    const group = groups[gi], [ax, ay] = toScreen(group.x, group.z);
+    group.visible = ax >= 0 && ax <= width && ay >= 0 && ay <= height;
+    if (!group.visible) continue;
+    const columns = group.count === 6 ? 3 : Math.min(5, group.count);
+    const rows = Math.ceil(group.count / columns), w = 100, h = 22 + rows * 22;
+    let bestScore = Infinity, bx = 0, by = 0;
+    // Keep tightly packed physical slots readable. Prefer a nearby panel that
+    // doesn't overlap another tower; the leader stays at the true map position.
+    for (let candidate = 0; candidate < 8; candidate++) {
+      const left = candidate & 1, below = candidate & 2, far = candidate & 4;
+      const gap = far ? 42 : 12;
+      const x = Math.max(2, Math.min(width - w - 2, ax + (left ? -w - gap : gap)));
+      const y = Math.max(2, Math.min(height - h - 2, ay + (below ? gap : -h - gap)));
+      let score = Math.hypot(x + w / 2 - ax, y + h / 2 - ay);
+      for (let j = 0; j < gi; j++) {
+        const other = groups[j];
+        if (!other.visible) continue;
+        const overlapX = Math.max(0, Math.min(x + w + 4, other.bx + other.w) - Math.max(x - 4, other.bx));
+        const overlapY = Math.max(0, Math.min(y + h + 4, other.by + other.h) - Math.max(y - 4, other.by));
+        score += overlapX * overlapY * 100;
+      }
+      if (score < bestScore) { bestScore = score; bx = x; by = y; }
+    }
+    group.bx = bx; group.by = by; group.w = w; group.h = h;
+    let filled = 0;
+    ctx.strokeStyle = "#d1dbe9";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(Math.max(bx, Math.min(bx + w, ax)), Math.max(by, Math.min(by + h, ay)));
+    ctx.stroke();
+    for (let i = 0; i < group.count; i++) {
+      const slot = receptacles.slots[group.start + i], name = occupants[group.start + i];
+      const [x, y] = toScreen(slot.x, slot.z);
+      ctx.beginPath();
+      ctx.arc(x, y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = name === null ? "#17212f" : gourdColor(name);
+      ctx.fill();
+      ctx.stroke();
+      if (name !== null) filled++;
+    }
+    ctx.fillStyle = "#101923ed";
+    ctx.fillRect(bx, by, w, h);
+    ctx.strokeStyle = "#697d95";
+    ctx.strokeRect(bx, by, w, h);
+    ctx.font = "11px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#dfe5ee";
+    ctx.fillText(`${group.name} ${filled}/${group.count}`, bx + w / 2, by + 13);
+    for (let i = 0; i < group.count; i++) {
+      const name = occupants[group.start + i];
+      drawIcon(gourdIcon, bx + (w - columns * 18) / 2 + (i % columns) * 18 + 9,
+        by + 31 + Math.floor(i / columns) * 22, name === null ? "transparent" : gourdColor(name), 0.48);
+    }
+  }
+  ctx.restore();
+}
+
 function render() {
   if (mapView.deferRender()) return;
   size();
@@ -710,27 +773,17 @@ function render() {
     ctx.strokeRect(sx - 3, sy - 3, 6, 6);
   }
 
-  // monument slots
-  const homeLm = new Map((h.landmarks || []).filter(l => l.id.startsWith("home-")).map(l => [parseInt(l.id.slice(5), 10), [l.x, l.z]]));
-  for (const m of fr.monuments) {
-    const pos = homeLm.get(m.homeName);
-    if (!pos) continue;
-    const [sx, sy] = toScreen(pos[0], pos[1]);
-    ctx.fillStyle = m.filled ? "#57d187" : "#4f5d72";
-    ctx.strokeStyle = "#10131a";
-    ctx.lineWidth = 3;
-    ctx.fillRect(sx - 6, sy - 6, 12, 12);
-    ctx.strokeRect(sx - 6, sy - 6, 12, 12);
-  }
+  const occupants = receptacles.at(frameIdx);
 
   // gourds (before players so stashed ones sit under player markers)
   for (const g of fr.gourds) {
+    if (receptacles.slotAt(g) >= 0) continue;
     const [sx, sy] = toScreen(g.x, g.z);
     ctx.globalAlpha = g.state === 0 ? 0.75 : 1;
     drawIcon(gourdIcon, sx, sy, gourdColor(g.name), 0.8);
     ctx.globalAlpha = 1;
   }
-
+  drawReceptacles(occupants);
 
   // players
   for (let i = 0; i < fr.players.length; i++) {
@@ -738,7 +791,9 @@ function render() {
     const color = playerColor(p.netId);
     const [sx, sy] = toScreen(p.x, p.z);
     drawIcon(playerIcon, sx, sy, color);
-    if (p.carriedGourd) drawIcon(gourdIcon, sx + 17, sy + 10, gourdColor(p.carriedGourd), 0.45);
+    if (p.carriedGourd && !occupants.includes(p.carriedGourd)) {
+      drawIcon(gourdIcon, sx + 17, sy + 10, gourdColor(p.carriedGourd), 0.45);
+    }
     // Recorded yaw in current real captures is only 0/pi, not a reliable heading.
     // Do not draw a facing arrow until the recorder's yaw contract is corrected.
     // label
@@ -757,7 +812,7 @@ function tick() {
   if (alignmentPanel.open) mapView.setSources(fr, replay.header.landmarks || []);
   render();
   updateStatus(fr);
-  updateTowers(fr);
+  updateTowers();
 }
 
 function fmt(s) {
@@ -806,25 +861,26 @@ function updateStatus(fr) {
 
 function renderTowers() {
   towersEl.textContent = "";
-  for (const [name, homes] of Object.entries(TOWERS)) {
+  for (const group of receptacles.groups) {
     const el = document.createElement("div");
     el.className = "tower";
-    el.id = "tw-" + name;
-    el.innerHTML = `<span>${name}</span><span>0/${homes.length}</span>`;
+    el.id = "tw-" + group.name;
+    el.innerHTML = `<span>${group.name}</span><span>0/${group.count}</span>`;
     towersEl.appendChild(el);
   }
 }
 
-function updateTowers(fr) {
-  const filled = new Set(fr.monuments.filter(m => m.filled).map(m => m.homeName));
-  for (const [name, homes] of Object.entries(TOWERS)) {
-    const n = homes.filter(h => filled.has(h)).length;
-    const el = document.querySelector(`#tw-${name} span:last-child`);
+function updateTowers() {
+  const occupants = receptacles.at(frameIdx);
+  for (const group of receptacles.groups) {
+    let n = 0;
+    for (let i = 0; i < group.count; i++) if (occupants[group.start + i] !== null) n++;
+    const el = document.querySelector(`#tw-${group.name} span:last-child`);
     if (!el) continue;
-    const count = `${n}/${homes.length}`;
+    const count = `${n}/${group.count}`;
     if (el.textContent === count) continue;
     el.textContent = count;
-    el.parentElement.className = "tower" + (n === homes.length ? " done" : "");
+    el.parentElement.className = "tower" + (n === group.count ? " done" : "");
   }
 }
 

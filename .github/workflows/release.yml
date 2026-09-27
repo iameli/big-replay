@@ -94,8 +94,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check viewer trail geometry
-        run: node --test scripts/map-trails.test.cjs
+      - name: Check viewer geometry and receptacles
+        run: node --test scripts/*.test.cjs
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
@@ -103,7 +103,7 @@ jobs:
       - name: Stage viewer site
         run: |
           mkdir -p _site/icons
-          cp index.html map-view.js bigmap.jpeg sample.replay.json.gz CNAME logo.svg favicon.ico site.webmanifest _site/
+          cp index.html map-view.js gourd-receptacles.js bigmap.jpeg sample.replay.json.gz CNAME logo.svg favicon.ico site.webmanifest _site/
           cp icons/icon-192.png icons/icon-512.png icons/apple-touch-icon.png _site/icons/
 
       - name: Upload Pages artifact
