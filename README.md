@@ -168,6 +168,11 @@ release in a new tab without interrupting the viewer.
 Click the **Big Replay** title or its info icon to open **About**. Close the dialog
 with **Close**, Escape, or a click outside it.
 
+Link previews use `og-card.jpg`, a centered **1200 × 630** crop of a completed
+game screenshot with player trails. The JPEG is published with the viewer and
+referenced by both Open Graph and Twitter large-image card metadata; app icons
+remain unchanged.
+
 For offline use, open the root `index.html` from a checkout. Keep `map-view.js`,
 `gourd-receptacles.js`, and `bigmap.jpeg` beside it. No build or package install is needed. Alternatively,
 serve the repository root with a static HTTP server and open `/?replay=run1.replay.json.gz`.

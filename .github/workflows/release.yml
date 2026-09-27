@@ -103,7 +103,7 @@ jobs:
       - name: Stage viewer site
         run: |
           mkdir -p _site/icons
-          cp index.html map-view.js gourd-receptacles.js bigmap.jpeg sample.replay.json.gz CNAME logo.svg favicon.ico site.webmanifest _site/
+          cp index.html map-view.js gourd-receptacles.js bigmap.jpeg og-card.jpg sample.replay.json.gz CNAME logo.svg favicon.ico site.webmanifest _site/
           cp icons/icon-192.png icons/icon-512.png icons/apple-touch-icon.png _site/icons/
 
       - name: Upload Pages artifact
