@@ -247,12 +247,15 @@ Geometry and cache-lifecycle regression checks require Node.js but no packages:
 `node --test scripts/map-trails.test.cjs`. They also run before Pages deployment.
 
 **Player names & colors** lists every player in the recording, even before they
-join or after they leave. The original name and network ID remain visible beside
-each player's settings. The first readable recorded username is used, including
-names that become available later in the recording; unnamed players fall back to
-`Player #<netId>`.
+join or after they leave. The compact list shows nicknames when assigned, otherwise
+the first readable recorded username, including names that become available later
+in the recording. Unnamed players fall back to `Player #<netId>`. Original names
+and network IDs are visible while editing and available by hovering over list names.
 
-Enter a **Nickname**, then press **Enter** or leave the field to save it locally.
+Click **Edit nicknames** to reveal the nickname fields, Reset buttons, and editing
+help. Enter a **Nickname**, then press **Enter** or leave the field to save it
+locally. **Done** saves the current field and hides the editors again; colors remain
+available in the compact list. The editors start hidden each time the viewer opens.
 Nicknames appear on the map, in join/leave events, and in alignment source choices.
 Use **Reset**, or save an empty field, to restore the recorded name. Existing
 calibration-reference captions remain historical descriptions captured when those

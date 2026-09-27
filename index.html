@@ -91,9 +91,12 @@
   .player-name { overflow-wrap: anywhere; }
   .player-swatch { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #eef3fa; }
   .player-color select { min-width: 0; width: 100%; }
-  .player-nickname { grid-column: 2 / -1; display: flex; gap: 6px; min-width: 0; }
+  .player-nickname { grid-column: 2 / -1; gap: 6px; min-width: 0; }
   .player-nickname input { flex: 1; min-width: 0; width: 0; font: inherit; }
   .player-nickname .btn { flex: none; }
+  .player-nickname, #nickname-help, #nickname-status { display: none; }
+  .editing-nicknames .player-nickname { display: flex; }
+  .editing-nicknames #nickname-help, .editing-nicknames #nickname-status, #nickname-status.storage-error { display: block; }
   button:disabled { opacity: .45; cursor: default; }
   @media (max-width: 650px) {
     body { flex-direction: column; }
@@ -163,7 +166,8 @@
     <summary>Player names &amp; colors</summary>
     <div class="section-body">
     <p>Choosing an assigned color swaps the two players. Markers and trails change together.</p>
-    <p>Nicknames save when you press Enter or leave the field. Reset restores the recorded name.</p>
+    <button class="btn" id="edit-nicknames" type="button" aria-expanded="false" aria-controls="player-colors nickname-help nickname-status" disabled>Edit nicknames</button>
+    <p id="nickname-help">Nicknames save when you press Enter or leave the field. Reset restores the recorded name.</p>
     <div id="player-colors"></div>
     <p id="color-status" role="status">Load a replay to assign colors.</p>
     <p id="nickname-status" role="status">Nicknames are stored only in this browser.</p>
@@ -300,6 +304,12 @@ trailSelect.value = trailMode;
 alignmentPanel.addEventListener("toggle", () => {
   if (alignmentPanel.open && replay) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
 });
+document.getElementById("edit-nicknames").addEventListener("click", e => {
+  const editing = document.getElementById("player-settings").classList.toggle("editing-nicknames");
+  e.currentTarget.textContent = editing ? "Done" : "Edit nicknames";
+  e.currentTarget.setAttribute("aria-expanded", String(editing));
+  renderPlayerSettings();
+});
 
 function playerColor(netId) {
   return PLAYER_PALETTE[playerColorAssignments.get(netId) ?? 0].color;
@@ -351,12 +361,17 @@ function preparePlayers() {
   }
   renderPlayerSettings();
   document.getElementById("color-status").textContent = "Saved in this browser; reassign colors when players or roles change.";
-  document.getElementById("nickname-status").textContent =
-    "Unique recorded names share nicknames across replays; duplicate or unnamed players stay recording-specific.";
+  const nicknameStatus = document.getElementById("nickname-status");
+  if (!nicknameStatus.classList.contains("storage-error")) {
+    nicknameStatus.textContent =
+      "Unique recorded names share nicknames across replays; duplicate or unnamed players stay recording-specific.";
+  }
 }
 
 function renderPlayerSettings() {
   const container = document.getElementById("player-colors");
+  const editing = document.getElementById("player-settings").classList.contains("editing-nicknames");
+  document.getElementById("edit-nicknames").disabled = !playerNames.size;
   container.replaceChildren();
   for (const [id, index] of [...playerColorAssignments].sort((a, b) => a[0] - b[0])) {
     const row = document.createElement("div");
@@ -367,7 +382,9 @@ function renderPlayerSettings() {
     const name = document.createElement("span");
     name.className = "player-name";
     const recordedName = playerNames.get(id) || `Player #${id}`;
-    name.textContent = playerNames.get(id) ? `${recordedName} · #${id}` : recordedName;
+    const recordedIdentity = playerNames.get(id) ? `${recordedName} · #${id}` : recordedName;
+    name.textContent = editing ? recordedIdentity : playerLabel(id);
+    name.title = recordedIdentity;
     const select = document.createElement("select");
     select.setAttribute("aria-label", `Color for ${playerLabel(id)}`);
     select.dataset.playerId = id;
@@ -419,7 +436,9 @@ function renderPlayerSettings() {
       } catch { persisted = false; }
       reset.disabled = !value;
       select.setAttribute("aria-label", `Color for ${playerLabel(id)}`);
-      document.getElementById("nickname-status").textContent = persisted
+      const nicknameStatus = document.getElementById("nickname-status");
+      nicknameStatus.classList.toggle("storage-error", !persisted);
+      nicknameStatus.textContent = persisted
         ? value ? "Nickname saved in this browser." : "Nickname removed; using the recorded name."
         : "Storage unavailable; nickname changes last only this session.";
       renderEvents();
