@@ -85,12 +85,15 @@
   .fine-adjustments input { width: 100%; }
   #route-editor details { margin: 10px 0; }
   #reference-tools { margin-top: 12px; }
-  #trail-mode, .player-color select { background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; }
+  #trail-mode, .player-color select, .player-nickname input { background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; }
   #player-settings p { font-size: 11px; color: #aab8cc; margin: 6px 0; }
   .player-color { display: grid; grid-template-columns: 14px minmax(0, 1fr) 130px; align-items: center; gap: 7px; margin: 6px 0; }
   .player-name { overflow-wrap: anywhere; }
   .player-swatch { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #eef3fa; }
   .player-color select { min-width: 0; width: 100%; }
+  .player-nickname { grid-column: 2 / -1; display: flex; gap: 6px; min-width: 0; }
+  .player-nickname input { flex: 1; min-width: 0; width: 0; font: inherit; }
+  .player-nickname .btn { flex: none; }
   button:disabled { opacity: .45; cursor: default; }
   @media (max-width: 650px) {
     body { flex-direction: column; }
@@ -157,11 +160,13 @@
   </div>
   </details>
   <details class="sidebar-section" id="player-settings" open>
-    <summary>Player colors</summary>
+    <summary>Player names &amp; colors</summary>
     <div class="section-body">
     <p>Choosing an assigned color swaps the two players. Markers and trails change together.</p>
+    <p>Nicknames save when you press Enter or leave the field. Reset restores the recorded name.</p>
     <div id="player-colors"></div>
     <p id="color-status" role="status">Load a replay to assign colors.</p>
+    <p id="nickname-status" role="status">Nicknames are stored only in this browser.</p>
     </div>
   </details>
   <details class="sidebar-section" id="tower-section" open>
@@ -252,8 +257,11 @@ const PLAYER_PALETTE = [
 ];
 const COLOR_STORAGE = "big-walk:player-colors:v1";
 const TRAIL_STORAGE = "big-walk:trail-mode:v1";
+const NICKNAME_STORAGE = "big-walk:player-nicknames:v1";
 const playerColorAssignments = new Map();
 const playerNames = new Map();
+const playerNicknameKeys = new Map(), savedPlayerNicknames = new Map();
+let nicknameRecordingScope = "";
 let savedPlayerColors = {};
 let trailMode = "recent";
 try {
@@ -262,6 +270,14 @@ try {
   const savedTrail = localStorage.getItem(TRAIL_STORAGE);
   if (["off", "recent", "persistent"].includes(savedTrail)) trailMode = savedTrail;
 } catch { /* Browser preferences are optional; the viewer still works offline. */ }
+try {
+  const saved = JSON.parse(localStorage.getItem(NICKNAME_STORAGE));
+  if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+    for (const [key, nickname] of Object.entries(saved)) {
+      if (typeof nickname === "string" && nickname.trim()) savedPlayerNicknames.set(key, nickname.trim());
+    }
+  }
+} catch { /* Nicknames remain usable for this session when storage is unavailable. */ }
 const playerIcon = markerArtwork("player-symbol");
 const gourdIcon = markerArtwork("gourd-symbol");
 // One LRU for artwork and labels: at most 256 entries / 16 MiB of RGBA pixels.
@@ -294,18 +310,27 @@ function gourdColor(name) {
 }
 
 function playerLabel(netId) {
-  return playerNames.get(netId) || `Player #${netId}`;
+  return savedPlayerNicknames.get(playerNicknameKeys.get(netId)) ||
+    playerNames.get(netId) || `Player #${netId}`;
 }
 
-function assignPlayerColors() {
+function preparePlayers() {
   playerColorAssignments.clear();
   playerNames.clear();
+  playerNicknameKeys.clear();
   for (const frame of frames) for (const player of frame.players) {
     // A name may become readable after the player's first sample.
     if (!playerNames.get(player.netId)) {
       const name = typeof player.name === "string" ? player.name.trim() : "";
       playerNames.set(player.netId, name);
     }
+  }
+  const counts = new Map();
+  for (const name of playerNames.values()) if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  for (const [id, name] of playerNames) {
+    // Network IDs are session-local, and display names are not unique account IDs.
+    playerNicknameKeys.set(id, JSON.stringify(name && counts.get(name) === 1
+      ? ["name", name] : ["recording", nicknameRecordingScope, id]));
   }
   const ids = [...playerNames.keys()].sort((a, b) => a - b);
   const used = new Set();
@@ -324,22 +349,25 @@ function assignPlayerColors() {
     playerColorAssignments.set(id, index);
     used.add(index);
   }
-  renderPlayerColors();
+  renderPlayerSettings();
   document.getElementById("color-status").textContent = "Saved in this browser; reassign colors when players or roles change.";
+  document.getElementById("nickname-status").textContent =
+    "Unique recorded names share nicknames across replays; duplicate or unnamed players stay recording-specific.";
 }
 
-function renderPlayerColors() {
+function renderPlayerSettings() {
   const container = document.getElementById("player-colors");
   container.replaceChildren();
   for (const [id, index] of [...playerColorAssignments].sort((a, b) => a[0] - b[0])) {
-    const row = document.createElement("label");
+    const row = document.createElement("div");
     row.className = "player-color";
     const swatch = document.createElement("span");
     swatch.className = "player-swatch";
     swatch.style.backgroundColor = PLAYER_PALETTE[index].color;
     const name = document.createElement("span");
     name.className = "player-name";
-    name.textContent = playerLabel(id);
+    const recordedName = playerNames.get(id) || `Player #${id}`;
+    name.textContent = playerNames.get(id) ? `${recordedName} · #${id}` : recordedName;
     const select = document.createElement("select");
     select.setAttribute("aria-label", `Color for ${playerLabel(id)}`);
     select.dataset.playerId = id;
@@ -357,14 +385,58 @@ function renderPlayerColors() {
       for (const [player, color] of playerColorAssignments) savedPlayerColors[player] = PLAYER_PALETTE[color].name;
       let persisted = true;
       try { localStorage.setItem(COLOR_STORAGE, JSON.stringify(savedPlayerColors)); } catch { persisted = false; }
-      renderPlayerColors();
+      renderPlayerSettings();
       document.getElementById("color-status").textContent = persisted
         ? "Colors saved in this browser."
         : "Storage unavailable; color assignments last only this session.";
       document.querySelector(`#player-colors select[data-player-id="${id}"]`).focus();
       render();
     });
-    row.append(swatch, name, select);
+    const editor = document.createElement("div");
+    editor.className = "player-nickname";
+    const nickname = document.createElement("input");
+    nickname.type = "text";
+    nickname.autocomplete = "off";
+    nickname.spellcheck = false;
+    nickname.placeholder = "Nickname";
+    nickname.value = savedPlayerNicknames.get(playerNicknameKeys.get(id)) || "";
+    nickname.setAttribute("aria-label", `Nickname for ${recordedName} (#${id})`);
+    nickname.dataset.playerId = id;
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "btn";
+    reset.textContent = "Reset";
+    reset.setAttribute("aria-label", `Reset nickname for ${recordedName} (#${id})`);
+    reset.disabled = !nickname.value;
+    const commitNickname = () => {
+      const value = nickname.value.trim(), key = playerNicknameKeys.get(id);
+      nickname.value = value;
+      if (value) savedPlayerNicknames.set(key, value);
+      else savedPlayerNicknames.delete(key);
+      let persisted = true;
+      try {
+        localStorage.setItem(NICKNAME_STORAGE, JSON.stringify(Object.fromEntries(savedPlayerNicknames)));
+      } catch { persisted = false; }
+      reset.disabled = !value;
+      select.setAttribute("aria-label", `Color for ${playerLabel(id)}`);
+      document.getElementById("nickname-status").textContent = persisted
+        ? value ? "Nickname saved in this browser." : "Nickname removed; using the recorded name."
+        : "Storage unavailable; nickname changes last only this session.";
+      renderEvents();
+      if (alignmentPanel.open) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
+      render();
+    };
+    nickname.addEventListener("change", commitNickname);
+    nickname.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); nickname.blur(); }
+    });
+    reset.addEventListener("click", () => {
+      nickname.value = "";
+      commitNickname();
+      nickname.focus();
+    });
+    editor.append(nickname, reset);
+    row.append(swatch, name, select, editor);
     container.append(row);
   }
 }
@@ -400,12 +472,19 @@ async function parseBuffer(buf, name) {
     alert("could not parse replay file: " + err);
     return;
   }
+  const recordedAt = parsed.header?.recordedAt;
+  // Normal recordings have a start timestamp. Hash older files without one so
+  // their unnamed players still persist without colliding on reused network IDs.
+  nicknameRecordingScope = typeof recordedAt === "string" && recordedAt.trim()
+    ? `recorded:${recordedAt}`
+    : `sha256:${Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buf)),
+      byte => byte.toString(16).padStart(2, "0")).join("")}`;
   replay = parsed;
   resetMarkerSprites();
   frames = replay.frames || [];
   events = replay.events || [];
   if (!frames.length) { alert("no frames in replay"); return; }
-  assignPlayerColors();
+  preparePlayers();
   mapView.setReplay(frames);
   document.getElementById("drop").classList.add("hidden");
   renderTowers();

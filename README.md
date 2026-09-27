@@ -180,11 +180,11 @@ to reset the view. Trackpad pinch has higher sensitivity than ordinary scrolling
 Playback starts paused; the timeline selects exact recorded frames. Playback and
 the clock use recorded timestamps rather than assuming uniform samples.
 
-The sidebar groups Playback, Player colors, Tower progress, Map alignment, and
+The sidebar groups Playback, Player names & colors, Tower progress, Map alignment, and
 Events into collapsible sections. Click a heading, or focus it and press Enter
 or Space, to toggle it. Map alignment starts collapsed; the other sections start open.
 
-### Markers, trails, and player colors
+### Markers, trails, and player names
 
 Players use person-shaped vector icons; gourds use the side-view gourd silhouette
 in both the map and legend. White inner and dark outer outlines keep them visible
@@ -246,12 +246,30 @@ Hidden alignment reference controls are not rebuilt on every frame.
 Geometry and cache-lifecycle regression checks require Node.js but no packages:
 `node --test scripts/map-trails.test.cjs`. They also run before Pages deployment.
 
-**Player colors** lists every player in the recording, even before they join or
-after they leave. Each player's first readable recorded username is used in this
-list, map labels, join/leave events, and alignment choices, including names that
-become available later in the recording. Recordings without names fall back to
-`Player #<netId>`. Duplicate usernames remain separate players with independent
-color assignments.
+**Player names & colors** lists every player in the recording, even before they
+join or after they leave. The original name and network ID remain visible beside
+each player's settings. The first readable recorded username is used, including
+names that become available later in the recording; unnamed players fall back to
+`Player #<netId>`.
+
+Enter a **Nickname**, then press **Enter** or leave the field to save it locally.
+Nicknames appear on the map, in join/leave events, and in alignment source choices.
+Use **Reset**, or save an empty field, to restore the recorded name. Existing
+calibration-reference captions remain historical descriptions captured when those
+references were placed.
+
+Nicknames are matched by the **exact recorded username** when it is unique in the
+replay, so they follow that name across recordings even if its network ID changes.
+Recordings do not contain persistent account IDs: a changed username needs a new
+nickname, and matching a display name is not verified account identity. Duplicate
+or unnamed players instead have independent nicknames scoped to the recording's
+start timestamp and network ID. Older files without that timestamp use a file
+hash, so their nicknames persist for the same file without leaking to unrelated
+unnamed players.
+
+Nicknames are stored only in this browser, not uploaded or written into replay
+files or shared links. If browser storage is unavailable, changes work for the
+current session and the settings show a warning.
 
 The 12-color palette is Sky, Coral, Mint, Gold, Violet, Cyan,
 Orange, Pink, Lime, Ivory, Rose, and Slate. Players receive distinct initial colors
