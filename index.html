@@ -150,9 +150,9 @@
       <use href="#gourd-symbol" fill="none" stroke="#10131a" stroke-width="6" stroke-linejoin="round"/>
       <use href="#gourd-symbol" fill="#8053ac" stroke="#f4f7ff" stroke-width="2.5" stroke-linejoin="round" paint-order="stroke fill"/>
     </svg>gourds</span>
-    <span><svg viewBox="-18 -20 36 40" aria-hidden="true">
-      <use href="#gourd-symbol" fill="none" stroke="#10131a" stroke-width="6" stroke-linejoin="round"/>
-      <use href="#gourd-symbol" fill="none" stroke="#f4f7ff" stroke-width="2.5" stroke-linejoin="round"/>
+    <span><svg viewBox="0 0 20 26" aria-hidden="true">
+      <circle cx="10" cy="13" r="3" fill="none" stroke="#10131a" stroke-width="2.5"/>
+      <circle cx="10" cy="13" r="3" fill="none" stroke="#aab8cc" stroke-width="0.9"/>
     </svg>empty receptacle</span><span class="lg-land">landmark</span>
   </div>
   </details>
@@ -251,6 +251,10 @@
 "use strict";
 document.getElementById("about-open").addEventListener("click", () => document.getElementById("about-dialog").showModal());
 const receptacles = new GourdReceptacles();
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const previousReceptacles = receptacles.slots.map(() => null);
+const receptaclePulseStarts = new Float64Array(receptacles.slots.length).fill(-Infinity);
+let receptacleFrame = -1, receptacleAnimationFrame = null;
 // SaveablePropName IDs: the seven southernmost gourds after map alignment in the 1.5.1 reference replay.
 const PURPLE_GOURD_IDS = new Set([134, 142, 151, 152, 156, 158, 159]);
 const PLAYER_PALETTE = [
@@ -507,6 +511,7 @@ async function parseBuffer(buf, name) {
   if (!frames.length) { alert("no frames in replay"); return; }
   preparePlayers();
   receptacles.setReplay(frames);
+  receptacleFrame = -1;
   mapView.setReplay(frames);
   document.getElementById("drop").classList.add("hidden");
   renderTowers();
@@ -692,67 +697,73 @@ function drawPlayerLabel(text, x, y, color) {
   }
 }
 
+function updateReceptaclePulses() {
+  const occupants = receptacles.at(frameIdx), now = performance.now();
+  const advancing = playing && receptacleFrame >= 0 && frameIdx > receptacleFrame;
+  for (let i = 0; i < occupants.length; i++) {
+    if (!advancing || reducedMotion.matches || occupants[i] === null) {
+      receptaclePulseStarts[i] = -Infinity;
+    } else if (occupants[i] !== previousReceptacles[i]) {
+      receptaclePulseStarts[i] = now;
+    }
+    previousReceptacles[i] = occupants[i];
+  }
+  receptacleFrame = frameIdx;
+  if (!advancing && receptacleAnimationFrame !== null) {
+    cancelAnimationFrame(receptacleAnimationFrame);
+    receptacleAnimationFrame = null;
+  }
+}
+
+function animateReceptacles() {
+  receptacleAnimationFrame = null;
+  render();
+}
+
 function drawReceptacles(occupants) {
   ctx.save();
-  const width = canvas.clientWidth, height = canvas.clientHeight;
-  const groups = receptacles.groups;
-  for (let gi = 0; gi < groups.length; gi++) {
-    const group = groups[gi], [ax, ay] = toScreen(group.x, group.z);
-    group.visible = ax >= 0 && ax <= width && ay >= 0 && ay <= height;
-    if (!group.visible) continue;
+  const now = performance.now();
+  let animating = false;
+  for (const group of receptacles.groups) {
+    const [ax, ay] = toScreen(group.x, group.z);
     const columns = group.count === 6 ? 3 : Math.min(5, group.count);
-    const rows = Math.ceil(group.count / columns), w = 100, h = 22 + rows * 22;
-    let bestScore = Infinity, bx = 0, by = 0;
-    // Keep tightly packed physical slots readable. Prefer a nearby panel that
-    // doesn't overlap another tower; the leader stays at the true map position.
-    for (let candidate = 0; candidate < 8; candidate++) {
-      const left = candidate & 1, below = candidate & 2, far = candidate & 4;
-      const gap = far ? 42 : 12;
-      const x = Math.max(2, Math.min(width - w - 2, ax + (left ? -w - gap : gap)));
-      const y = Math.max(2, Math.min(height - h - 2, ay + (below ? gap : -h - gap)));
-      let score = Math.hypot(x + w / 2 - ax, y + h / 2 - ay);
-      for (let j = 0; j < gi; j++) {
-        const other = groups[j];
-        if (!other.visible) continue;
-        const overlapX = Math.max(0, Math.min(x + w + 4, other.bx + other.w) - Math.max(x - 4, other.bx));
-        const overlapY = Math.max(0, Math.min(y + h + 4, other.by + other.h) - Math.max(y - 4, other.by));
-        score += overlapX * overlapY * 100;
-      }
-      if (score < bestScore) { bestScore = score; bx = x; by = y; }
-    }
-    group.bx = bx; group.by = by; group.w = w; group.h = h;
-    let filled = 0;
-    ctx.strokeStyle = "#d1dbe9";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(Math.max(bx, Math.min(bx + w, ax)), Math.max(by, Math.min(by + h, ay)));
-    ctx.stroke();
-    for (let i = 0; i < group.count; i++) {
-      const slot = receptacles.slots[group.start + i], name = occupants[group.start + i];
-      const [x, y] = toScreen(slot.x, slot.z);
-      ctx.beginPath();
-      ctx.arc(x, y, 2, 0, Math.PI * 2);
-      ctx.fillStyle = name === null ? "#17212f" : gourdColor(name);
-      ctx.fill();
-      ctx.stroke();
-      if (name !== null) filled++;
-    }
-    ctx.fillStyle = "#101923ed";
-    ctx.fillRect(bx, by, w, h);
-    ctx.strokeStyle = "#697d95";
-    ctx.strokeRect(bx, by, w, h);
-    ctx.font = "11px system-ui";
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#dfe5ee";
-    ctx.fillText(`${group.name} ${filled}/${group.count}`, bx + w / 2, by + 13);
+    const rows = Math.ceil(group.count / columns);
+    // Small, screen-sized clusters centered on the real tower/storage location.
     for (let i = 0; i < group.count; i++) {
       const name = occupants[group.start + i];
-      drawIcon(gourdIcon, bx + (w - columns * 18) / 2 + (i % columns) * 18 + 9,
-        by + 31 + Math.floor(i / columns) * 22, name === null ? "transparent" : gourdColor(name), 0.48);
+      const x = ax + ((i % columns) - (columns - 1) / 2) * 9;
+      const y = ay + (Math.floor(i / columns) - (rows - 1) / 2) * 9;
+      const progress = (now - receptaclePulseStarts[group.start + i]) / 420;
+      const pulse = name !== null && !reducedMotion.matches && progress >= 0 && progress < 1;
+      const radius = pulse ? 2.5 + 1.4 * (1 - progress) ** 2 : 2.5;
+      if (pulse) {
+        animating = true;
+        ctx.globalAlpha = 0.4 * (1 - progress);
+        ctx.beginPath();
+        ctx.arc(x, y, 4 + 3 * progress, 0, Math.PI * 2);
+        ctx.strokeStyle = gourdColor(name);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = name === null ? 0.7 : 1;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = "#10131a";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.strokeStyle = name === null ? "#aab8cc" : "#e4eaf2";
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+      if (name !== null) {
+        ctx.fillStyle = gourdColor(name);
+        ctx.fill();
+      }
     }
   }
   ctx.restore();
+  if (animating && receptacleAnimationFrame === null) {
+    receptacleAnimationFrame = requestAnimationFrame(animateReceptacles);
+  }
 }
 
 function render() {
@@ -810,6 +821,7 @@ function tick() {
   const time = fmt(fr.time);
   if (timeEl.textContent !== time) timeEl.textContent = time;
   if (alignmentPanel.open) mapView.setSources(fr, replay.header.landmarks || []);
+  updateReceptaclePulses();
   render();
   updateStatus(fr);
   updateTowers();

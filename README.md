@@ -211,13 +211,18 @@ These positions are bundled in `gourd-receptacles.js`; they are not inferred fro
 the last frame of whichever replay you open. Other game builds may need updated
 coordinates.
 
-Empty receptacles use hollow gourd icons from the start. Each tower/storage group
-has a compact labeled panel, a leader to its map location, and dots at the actual
-slot coordinates; this separates icons whose physical positions are too close
-to read individually. A slot fills red or purple according to the gourd actually
-placed there, and that gourd stops drawing as a separate world/carried marker.
-**Tower progress** uses these same occupied slots, rather than monument flags
-that are absent in some recordings.
+Receptacles appear as small dot clusters centered on each tower/storage location,
+without backgrounds, titles, or leader lines. Empty dots are hollow; filled dots
+use the actual gourd's red or purple color. The dots keep their small screen size
+when zooming and are spaced apart so nearby physical slots remain distinguishable.
+Placed gourds stop drawing as separate world/carried markers. Names and counts
+remain in **Tower progress**, which uses these same occupied slots rather than
+monument flags that are absent in some recordings.
+
+New placements during playback get a subtle **420 ms** pop and fading ring.
+The pulse uses real time at every playback speed, then stops requesting animation
+frames. Seeking and loading another replay clear pulses without animating historical
+placements. The viewer respects the system's **reduced motion** preference.
 
 Placement means a gourd's recorded **XYZ is within 0.01 world units (1 cm)** of a
 slot, regardless of gourd ID or reported pinning state. Including Y avoids counting
