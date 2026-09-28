@@ -15,8 +15,11 @@ const RKEY_RE = /^[a-zA-Z0-9._:~-]{1,512}$/;
 
 // ---------- routes ----------
 // DIDs always contain ":" and handles always contain ".", so any other first
-// segment (e.g. /settings) stays free for future app routes.
+// segment (e.g. /settings) stays free for future app routes. A full AT-URI in the
+// path ("Tynan-linking") also routes, with `redirect` naming the canonical path.
 function parseRoute(pathname) {
+  const atUri = parseAtUriPath(pathname);
+  if (atUri) return atUri;
   const parts = pathname.split("/").filter(Boolean).map(part => {
     try { return decodeURIComponent(part); } catch { return null; }
   });
@@ -27,6 +30,21 @@ function parseRoute(pathname) {
   const rkey = parts[1];
   if (rkey === null || !isRecordKey(rkey)) return { kind: "unknown" };
   return { kind: "replay", actor, rkey };
+}
+
+function parseAtUriPath(pathname) {
+  let text = pathname.replace(/^\/+/, "");
+  try { text = decodeURIComponent(text); } catch { return null; }
+  // Some clients and proxies collapse "at://" to "at:/" inside a path.
+  const match = /^at:\/\/?(.*)$/i.exec(text);
+  if (!match) return null;
+  const [actor, collection, rkey, ...rest] = match[1].replace(/\/+$/, "").split("/");
+  if (!actor || rest.length || !isActor(actor)) return { kind: "unknown" };
+  if (!collection || (collection === REPLAY_COLLECTION && !rkey)) {
+    return { kind: "actor", actor, redirect: `/${actor}` };
+  }
+  if (collection !== REPLAY_COLLECTION || !isRecordKey(rkey)) return { kind: "unknown" };
+  return { kind: "replay", actor, rkey, redirect: replayPath(actor, rkey) };
 }
 
 function isActor(actor) {
@@ -80,6 +98,19 @@ function normalizeDatetime(value) {
   if (typeof value !== "string" || !value.trim()) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+// Records published before the viewer dropped netId 0 and merged reconnects can
+// list those extra entries; count what the viewer now shows.
+function recordPlayerCount(record) {
+  const names = new Set();
+  let unnamed = 0;
+  for (const player of record?.players || []) {
+    if (player?.netId === 0) continue;
+    if (player?.name) names.add(player.name);
+    else unnamed++;
+  }
+  return names.size + unnamed;
 }
 
 function recordNicknames(record) {

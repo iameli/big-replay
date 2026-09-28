@@ -5,7 +5,7 @@ const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
 const atproto = runInNewContext(
   readFileSync(join(__dirname, '../atproto.js'), 'utf8') +
-  '\n({ parseRoute, replayPath, buildReplayRecord, recordNicknames, withNickname, rkeyFromUri, REPLAY_COLLECTION })',
+  '\n({ parseRoute, replayPath, buildReplayRecord, recordNicknames, recordPlayerCount, withNickname, rkeyFromUri, REPLAY_COLLECTION })',
   { EventTarget, URLSearchParams });
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -56,4 +56,25 @@ test('nicknames are set and cleared per netId without touching recorded names', 
   assert.deepEqual(plain([...atproto.recordNicknames(added)]), [[579, 'Randall'], [580, 'Newbie']]);
   const cleared = atproto.withNickname(added, 579, '');
   assert.deepEqual(plain(cleared.players[0]), { netId: 579, name: 'Rando' });
+});
+
+test('Tynan-linking: an AT-URI path redirects to the canonical replay or account path', () => {
+  const did = 'did:plc:2zmxikig2sj7gqaezl5gntae', uri = `at://${did}/com.iameli.bigWalk.replay/3mwluftfxqb2e`;
+  const expected = { kind: 'replay', actor: did, rkey: '3mwluftfxqb2e', redirect: `/${did}/3mwluftfxqb2e` };
+  assert.deepEqual(plain(atproto.parseRoute(`/${uri}`)), expected);
+  assert.deepEqual(plain(atproto.parseRoute(`/${encodeURIComponent(uri)}`)), expected);
+  assert.deepEqual(plain(atproto.parseRoute(`/at:/${did}/com.iameli.bigWalk.replay/3mwluftfxqb2e/`)), expected);
+  assert.deepEqual(plain(atproto.parseRoute('/at://iame.li/com.iameli.bigWalk.replay/3mw')),
+    { kind: 'replay', actor: 'iame.li', rkey: '3mw', redirect: '/iame.li/3mw' });
+  assert.deepEqual(plain(atproto.parseRoute(`/at://${did}`)), { kind: 'actor', actor: did, redirect: `/${did}` });
+  assert.deepEqual(plain(atproto.parseRoute(`/at://${did}/com.iameli.bigWalk.replay`)),
+    { kind: 'actor', actor: did, redirect: `/${did}` });
+  for (const path of [`/at://${did}/app.bsky.feed.post/3mw`, '/at://nope/com.iameli.bigWalk.replay/3mw',
+    `/at://${did}/com.iameli.bigWalk.replay/3mw/extra`])
+    assert.deepEqual(plain(atproto.parseRoute(path)), { kind: 'unknown' }, path);
+});
+
+test('record player counts skip netId 0 and count a reconnected name once', () => {
+  assert.equal(atproto.recordPlayerCount({ players: [{ netId: 0 }, { netId: 590, name: 'xCape' },
+    { netId: 592, name: 'xCape' }, { netId: 579, name: 'Rando' }, { netId: 600 }] }), 3);
 });

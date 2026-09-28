@@ -212,7 +212,10 @@ replay file as a blob to your PDS and creates a `com.iameli.bigWalk.replay` reco
 including every player's recorded Steam name. Many PDSes limit blobs to 50 MB.
 
 Links look like `https://big-replay.iame.li/<did>/<rkey>`. A handle also works in
-place of the DID, and `https://big-replay.iame.li/<did-or-handle>` lists that
+place of the DID. A full AT-URI after the domain also works and redirects to the
+canonical link, e.g. `https://big-replay.iame.li/at://<did>/com.iameli.bigWalk.replay/<rkey>`
+(an account's AT-URI opens its replay list); dropping an AT-URI onto the file drop
+area does the same. Also, `https://big-replay.iame.li/<did-or-handle>` lists that
 account's shared replays. Signed in, the home page lists your own. A first path
 segment containing `:` is a DID and one containing `.` is a handle, so any other
 top-level path stays available for the app. Loading a shared replay needs no
@@ -323,6 +326,14 @@ join or after they leave. The compact list shows nicknames when assigned, otherw
 the first readable recorded username, including names that become available later
 in the recording. Unnamed players fall back to `Player #<netId>`. Original names
 and network IDs are visible while editing and available by hovering over list names.
+
+The viewer cleans up two recorder artifacts when a replay loads (`replay-players.js`;
+the file itself is unchanged). Network ID 0 is a placeholder the game briefly
+shows while players spawn, never a real player, so it is dropped. A player who
+disconnects and rejoins gets a new network ID; network IDs with the same recorded
+name that never appear in the same frame are merged into the first one, and the
+editor lists all of them (e.g. `xCape · #590, #592`). Same-named players who are
+ever present together stay separate.
 
 Click **Edit nicknames** to reveal the nickname fields, Reset buttons, and editing
 help. Enter a **Nickname**, then press **Enter** or leave the field to save it

@@ -331,6 +331,7 @@
 </dialog>
 
 <script src="atproto.js"></script>
+<script src="replay-players.js"></script>
 <script src="map-view.js"></script>
 <script src="gourd-receptacles.js"></script>
 <script>
@@ -389,6 +390,8 @@ let replay = null, frames = [], events = [], frameIdx = 0, playing = false, spee
 // replaySource: the loaded file's bytes, kept for publishing. shared: the
 // Atmosphere record being viewed ({ did, handle, pds, rkey, cid, record, nicknames }).
 let replaySource = null, shared = null;
+// Canonical netId → every netId merged into it when a player reconnected.
+let playerAliases = new Map();
 const account = new AtmosphereAccount();
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
 const scrub = document.getElementById("scrub"), timeEl = document.getElementById("time");
@@ -500,7 +503,8 @@ function renderPlayerSettings() {
     const name = document.createElement("span");
     name.className = "player-name";
     const recordedName = playerNames.get(id) || `Player #${id}`;
-    const recordedIdentity = playerNames.get(id) ? `${recordedName} · #${id}` : recordedName;
+    const ids = (playerAliases.get(id) || [id]).map(netId => `#${netId}`).join(", ");
+    const recordedIdentity = playerNames.get(id) ? `${recordedName} · ${ids}` : recordedName;
     name.textContent = editing ? recordedIdentity : playerLabel(id);
     name.title = recordedIdentity;
     const select = document.createElement("select");
@@ -591,7 +595,11 @@ document.getElementById("drop").addEventListener("dragover", e => e.preventDefau
 document.getElementById("drop").addEventListener("drop", e => {
   e.preventDefault();
   const f = e.dataTransfer.files && e.dataTransfer.files[0];
-  if (f) loadFile(f);
+  if (f) return loadFile(f);
+  // A dropped AT-URI (e.g. dragged from another atproto app) opens that replay.
+  const text = (e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain")).trim();
+  const dropped = /^at:\/\//i.test(text) && parseRoute(`/${text}`);
+  if (dropped?.redirect) location.assign(dropped.redirect);
 });
 
 async function loadFile(file) {
@@ -625,6 +633,7 @@ async function parseBuffer(buf, name, sharedReplay = null) {
     : `sha256:${Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buf)),
       byte => byte.toString(16).padStart(2, "0")).join("")}`;
   if (!parsed?.frames?.length) { alert("no frames in replay"); return false; }
+  playerAliases = normalizeReplayPlayers(parsed);
   replay = parsed;
   replaySource = { buf, gzipped };
   setShared(sharedReplay);
@@ -680,6 +689,13 @@ function actorLabel(did, handle) {
 
 function setShared(value) {
   shared = value && { ...value, nicknames: recordNicknames(value.record) };
+  // Nicknames saved under a reconnected player's later netId apply to the merged player.
+  if (shared) {
+    for (const [netId, ids] of playerAliases) {
+      const nickname = ids.map(id => shared.nicknames.get(id)).find(Boolean);
+      if (nickname && !shared.nicknames.has(netId)) shared.nicknames.set(netId, nickname);
+    }
+  }
   const info = document.getElementById("replay-info");
   info.hidden = !shared;
   document.title = shared ? `${shared.record.title || "Shared replay"} · Big Replay` : "Big Replay";
@@ -725,17 +741,30 @@ function saveRecordNickname(id, value) {
   refreshPlayerLabels();
   status.textContent = "Saving nickname…";
   recordSave = recordSave.then(async () => {
-    const next = withNickname(target.record, id, value, playerNames.get(id));
+    const next = withNickname({ ...target.record, players: recordPlayers(target) }, id, value, playerNames.get(id));
     const { cid } = await account.putReplay(target.rkey, next, target.cid);
     target.record = next;
     target.cid = cid;
     if (shared === target) status.textContent = value ? "Nickname saved to your shared replay." : "Nickname removed from your shared replay.";
   }).catch(err => {
-    target.nicknames = recordNicknames(target.record);
+    target.nicknames = new Map(recordPlayers(target).filter(p => p.nickname).map(p => [p.netId, p.nickname]));
     if (shared !== target) return;
     status.textContent = `Could not save nickname: ${err.message}`;
     renderPlayerSettings();
     refreshPlayerLabels();
+  });
+}
+
+// The viewer's players for a record: drops netId 0 and folds reconnect netIds into
+// their first one, keeping any nickname recorded under either.
+function recordPlayers(target) {
+  const nicknames = recordNicknames(target.record);
+  return [...playerNames].sort((a, b) => a[0] - b[0]).map(([netId, name]) => {
+    const player = { netId };
+    if (name) player.name = name;
+    const nickname = (playerAliases.get(netId) || [netId]).map(id => nicknames.get(id)).find(Boolean);
+    if (nickname) player.nickname = nickname;
+    return player;
   });
 }
 
@@ -876,7 +905,7 @@ async function listReplays(actor, own) {
         when.textContent = [
           date && new Date(date).toLocaleString(),
           Number.isInteger(value.durationMs) && fmt(value.durationMs / 1000),
-          value.players?.length && `${value.players.length} players`,
+          recordPlayerCount(value) && `${recordPlayerCount(value)} players`,
         ].filter(Boolean).join(" · ");
         link.append(value.title || "Untitled replay", when);
         item.append(link);
@@ -937,6 +966,7 @@ account.init().catch(err => {
 renderSharing();
 
 const urlParam = new URLSearchParams(location.search).get("replay");
+if (route.redirect) history.replaceState(null, "", route.redirect + location.search);
 if (route.kind === "replay") loadSharedReplay(route.actor, route.rkey);
 else if (route.kind === "actor") listReplays(route.actor, false);
 else if (route.kind === "unknown") setStatus(dropStatus, "There's nothing at this address.", true);
