@@ -7,3 +7,4 @@ out/
 *.replay.json
 *.replay.json.gz
 !/sample.replay.json.gz
+node_modules/

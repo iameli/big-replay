@@ -24,10 +24,20 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; font: 13px/1.4 system-ui, sans-serif; background: #10131a; color: #dfe5ee; display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: minmax(0, 1fr) auto; height: 100vh; height: 100dvh; overflow: hidden; }
   #drop { position: fixed; left: 16px; top: 16px; max-width: calc(100% - 340px); padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; z-index: 5; background: #10131aeb; border: 1px solid #526675; border-radius: 8px; }
   #drop.hidden { display: none; }
   #drop .big { font-size: 18px; color: #8fa3bd; }
+  #drop.shared-loading .big, #drop.shared-loading > label { display: none; }
+  #drop-status { margin: 0; color: #aab8cc; overflow-wrap: anywhere; }
+  #replay-list { width: min(420px, calc(100vw - 72px)); }
+  #replay-list h2 { font-size: 14px; margin: 0 0 8px; overflow-wrap: anywhere; }
+  #replay-list ul { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+  #replay-list p { margin: 6px 0 0; font-size: 12px; color: #8fa3bd; }
+  .replay-item a { display: block; padding: 7px 8px; border-radius: 4px; color: #dfe5ee; text-decoration: none; overflow-wrap: anywhere; }
+  .replay-item a:hover, .replay-item a:focus-visible { background: #1c2330; outline: none; }
+  .replay-item .when { display: block; font-size: 11px; color: #7d8ba0; }
   #canvaswrap { grid-column: 1; grid-row: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #172e3a; touch-action: none; cursor: grab; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 0 0; }
   #sidebar { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; overflow-y: auto; border-left: 1px solid #232a36; background: #151a23; display: flex; flex-direction: column; }
@@ -37,12 +47,27 @@
   #about-open { display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
   #download { flex-shrink: 0; text-decoration: none; white-space: nowrap; }
   #download:focus-visible, #about-open:focus-visible, #about-dialog .btn:focus-visible { outline: 2px solid #56b4ff; outline-offset: 2px; }
-  #about-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 24px; border: 1px solid #526675; border-radius: 8px; background: #151a23; color: #dfe5ee; }
-  #about-dialog::backdrop { background: #0009; }
-  #about-dialog h2 { margin: 0 0 12px; font-size: 20px; }
+  #about-dialog, #share-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 24px; border: 1px solid #526675; border-radius: 8px; background: #151a23; color: #dfe5ee; }
+  #about-dialog::backdrop, #share-dialog::backdrop { background: #0009; }
+  #about-dialog h2, #share-dialog h2 { margin: 0 0 12px; font-size: 20px; }
   #about-dialog p { margin: 0 0 20px; line-height: 1.6; }
   #about-dialog a { color: #56b4ff; }
   #about-dialog form { display: flex; justify-content: flex-end; }
+  #share-form { display: flex; flex-direction: column; gap: 12px; }
+  #share-form label { display: flex; flex-direction: column; gap: 4px; }
+  #share-form p { margin: 0; line-height: 1.5; color: #aab8cc; }
+  #share-form textarea { min-height: 80px; resize: vertical; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  #replay-info { margin: 0 12px 8px; }
+  #replay-info h2 { font-size: 16px; margin: 0 0 2px; overflow-wrap: anywhere; }
+  #replay-byline { font-size: 11px; color: #8fa3bd; margin: 0 0 6px; }
+  #replay-description { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #aab8cc; }
+  #replay-byline a, #account-signed-in a, #share-bsky { color: #56b4ff; }
+  #share-section p { font-size: 11px; color: #aab8cc; margin: 6px 0; overflow-wrap: anywhere; }
+  .share-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+  #sign-in-form input, #share-link, #share-form input, #share-form textarea { min-width: 0; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; font: inherit; }
+  #sign-in-form input, #share-link { flex: 1; }
+  #share-status.error, #drop-status.error, #share-form-status.error { color: #ff8a8a; }
   #meta { font-size: 11px; color: #7d8ba0; margin: 0 12px 8px; }
   .sidebar-section { flex: none; border-top: 1px solid #313c52; }
   .sidebar-section > summary { padding: 10px 12px; font-weight: 600; cursor: pointer; user-select: none; }
@@ -117,6 +142,12 @@
 <div id="drop">
   <div class="big">Drop a <b>.replay.json.gz</b> file here</div>
   <label class="btn">choose file<input type="file" accept=".gz,.json" hidden></label>
+  <p id="drop-status" role="status" hidden></p>
+  <section id="replay-list" aria-labelledby="replay-list-title" hidden>
+    <h2 id="replay-list-title"></h2>
+    <ul id="replay-list-items"></ul>
+    <p id="replay-list-status" role="status"></p>
+  </section>
 </div>
 
 <div id="canvaswrap">
@@ -132,7 +163,42 @@
     </button></h1>
     <a id="download" class="btn" href="https://github.com/iameli/big-replay/releases/latest" target="_blank" rel="noopener noreferrer">Download Big Replay</a>
   </header>
+  <div id="replay-info" hidden>
+    <h2 id="replay-title"></h2>
+    <p id="replay-byline"></p>
+    <p id="replay-description" hidden></p>
+  </div>
   <div id="meta"></div>
+  <details class="sidebar-section" id="share-section" open>
+    <summary>Share</summary>
+    <div class="section-body">
+      <form id="sign-in-form">
+        <p>Sign in with your Atmosphere account (such as Bluesky) to publish replays as links.</p>
+        <div class="share-row">
+          <input id="sign-in-handle" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you.bsky.social" aria-label="Atmosphere handle" required>
+          <button class="btn" id="sign-in" type="submit" disabled>Sign in</button>
+        </div>
+      </form>
+      <div id="account-signed-in" hidden>
+        <p>Signed in as <a id="account-link"></a></p>
+        <div class="share-row">
+          <button class="btn" id="share-open" type="button" hidden>Share this replay…</button>
+          <button class="btn" id="sign-out" type="button">Sign out</button>
+        </div>
+      </div>
+      <div id="shared-actions" hidden>
+        <div class="share-row">
+          <input id="share-link" type="text" readonly aria-label="Replay link">
+          <button class="btn" id="copy-link" type="button">Copy</button>
+        </div>
+        <div class="share-row">
+          <a id="share-bsky" target="_blank" rel="noopener noreferrer">Post on Bluesky</a>
+          <button class="btn" id="delete-replay" type="button" hidden>Delete shared replay</button>
+        </div>
+      </div>
+      <p id="share-status" role="status"></p>
+    </div>
+  </details>
   <details class="sidebar-section" id="map-display-section" open>
     <summary>Map display</summary>
   <div class="row">
@@ -245,10 +311,26 @@
 
 <dialog id="about-dialog" aria-labelledby="about-title" aria-describedby="about-description" closedby="any">
   <h2 id="about-title">About Big Replay</h2>
-  <p id="about-description">Big Replay is a tool for recording character positions in Big Walk and playing them back afterward. It runs alongside the game and pulls data by scraping memory - it's not a mod and doesn't change anything in the running game. To use it, download <a href="https://github.com/iameli/big-replay/releases/latest/download/BigReplay-Setup.exe" target="_blank" rel="noopener noreferrer">BigReplay-Setup.exe</a> from GitHub and start the game. Afterward, your replays will be in a BigReplay folder in Documents.</p>
+  <p id="about-description">Big Replay is a tool for recording character positions in Big Walk and playing them back afterward. It runs alongside the game and pulls data by scraping memory - it's not a mod and doesn't change anything in the running game. To use it, download <a href="https://github.com/iameli/big-replay/releases/latest/download/BigReplay-Setup.exe" target="_blank" rel="noopener noreferrer">BigReplay-Setup.exe</a> from GitHub and start the game. Afterward, your replays will be in a BigReplay folder in Documents. Replays you open here are read in your browser and only uploaded if you sign in and choose <b>Share</b>.</p>
   <form method="dialog"><button id="about-close" class="btn" type="submit" autofocus>Close</button></form>
 </dialog>
 
+<dialog id="share-dialog" aria-labelledby="share-title" closedby="any">
+  <h2 id="share-title">Share replay</h2>
+  <form id="share-form">
+    <label>Title<input id="share-title-input" type="text" maxlength="100" required></label>
+    <label>Description <span>(optional)</span><textarea id="share-description" maxlength="1000"></textarea></label>
+    <p id="share-summary"></p>
+    <p>Publishing uploads the whole replay file to your account. Anyone with the link can watch it, including every player's recorded Steam name. After publishing, you can set nicknames under <b>Player names &amp; colors</b>.</p>
+    <p id="share-form-status" role="status"></p>
+    <div class="dialog-actions">
+      <button class="btn" id="share-cancel" type="button">Cancel</button>
+      <button class="btn" id="share-publish" type="submit">Publish</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="atproto.js"></script>
 <script src="map-view.js"></script>
 <script src="gourd-receptacles.js"></script>
 <script>
@@ -304,6 +386,10 @@ const labelMeasure = new OffscreenCanvas(1, 1).getContext("2d");
 let markerSpriteBytes = 0, markerSpriteDpr = devicePixelRatio, markerLabelDirection = "ltr";
 
 let replay = null, frames = [], events = [], frameIdx = 0, playing = false, speed = 1;
+// replaySource: the loaded file's bytes, kept for publishing. shared: the
+// Atmosphere record being viewed ({ did, handle, pds, rkey, cid, record, nicknames }).
+let replaySource = null, shared = null;
+const account = new AtmosphereAccount();
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
 const scrub = document.getElementById("scrub"), timeEl = document.getElementById("time");
 const playBtn = document.getElementById("play"), trailSelect = document.getElementById("trail-mode");
@@ -329,9 +415,32 @@ function gourdColor(name) {
   return PURPLE_GOURD_IDS.has(name) ? "#8053ac" : "#c64132";
 }
 
+// On your own shared replay, nicknames live in the published record. Elsewhere,
+// this browser's nicknames win over the uploader's.
+function nicknamesSaveToRecord() {
+  return !!shared && account.did === shared.did;
+}
+
+function playerNickname(netId) {
+  const recorded = shared?.nicknames.get(netId);
+  if (nicknamesSaveToRecord()) return recorded;
+  return savedPlayerNicknames.get(playerNicknameKeys.get(netId)) || recorded;
+}
+
 function playerLabel(netId) {
-  return savedPlayerNicknames.get(playerNicknameKeys.get(netId)) ||
-    playerNames.get(netId) || `Player #${netId}`;
+  return playerNickname(netId) || playerNames.get(netId) || `Player #${netId}`;
+}
+
+function nicknameStatusText() {
+  if (nicknamesSaveToRecord()) return "Nicknames save to your shared replay, so everyone with the link sees them.";
+  if (shared) return "The uploader's nicknames are shown unless you set your own here; yours stay in this browser.";
+  return "Unique recorded names share nicknames across replays; duplicate or unnamed players stay recording-specific.";
+}
+
+function refreshPlayerLabels() {
+  renderEvents();
+  if (alignmentPanel.open && replay) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
+  render();
 }
 
 function preparePlayers() {
@@ -373,8 +482,7 @@ function preparePlayers() {
   document.getElementById("color-status").textContent = "Saved in this browser; reassign colors when players or roles change.";
   const nicknameStatus = document.getElementById("nickname-status");
   if (!nicknameStatus.classList.contains("storage-error")) {
-    nicknameStatus.textContent =
-      "Unique recorded names share nicknames across replays; duplicate or unnamed players stay recording-specific.";
+    nicknameStatus.textContent = nicknameStatusText();
   }
 }
 
@@ -425,8 +533,9 @@ function renderPlayerSettings() {
     nickname.type = "text";
     nickname.autocomplete = "off";
     nickname.spellcheck = false;
-    nickname.placeholder = "Nickname";
-    nickname.value = savedPlayerNicknames.get(playerNicknameKeys.get(id)) || "";
+    const toRecord = nicknamesSaveToRecord();
+    nickname.placeholder = (!toRecord && shared?.nicknames.get(id)) || "Nickname";
+    nickname.value = (toRecord ? shared.nicknames.get(id) : savedPlayerNicknames.get(playerNicknameKeys.get(id))) || "";
     nickname.setAttribute("aria-label", `Nickname for ${recordedName} (#${id})`);
     nickname.dataset.playerId = id;
     const reset = document.createElement("button");
@@ -438,6 +547,13 @@ function renderPlayerSettings() {
     const commitNickname = () => {
       const value = nickname.value.trim(), key = playerNicknameKeys.get(id);
       nickname.value = value;
+      if (nicknamesSaveToRecord()) {
+        reset.disabled = !value;
+        if ((shared.nicknames.get(id) || "") === value) return;
+        saveRecordNickname(id, value);
+        select.setAttribute("aria-label", `Color for ${playerLabel(id)}`);
+        return;
+      }
       if (value) savedPlayerNicknames.set(key, value);
       else savedPlayerNicknames.delete(key);
       let persisted = true;
@@ -451,9 +567,7 @@ function renderPlayerSettings() {
       nicknameStatus.textContent = persisted
         ? value ? "Nickname saved in this browser." : "Nickname removed; using the recorded name."
         : "Storage unavailable; nickname changes last only this session.";
-      renderEvents();
-      if (alignmentPanel.open) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
-      render();
+      refreshPlayerLabels();
     };
     nickname.addEventListener("change", commitNickname);
     nickname.addEventListener("keydown", e => {
@@ -485,9 +599,11 @@ async function loadFile(file) {
   await parseBuffer(buf, file.name);
 }
 
-async function parseBuffer(buf, name) {
+async function parseBuffer(buf, name, sharedReplay = null) {
   let text;
-  if (name.endsWith(".gz") || (buf[0] === 0x1f && buf[1] === 0x8b)) {
+  const head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
+  const gzipped = name.endsWith(".gz") || (head[0] === 0x1f && head[1] === 0x8b);
+  if (gzipped) {
     const ds = new DecompressionStream("gzip");
     const stream = new Blob([buf]).stream().pipeThrough(ds);
     text = await new Response(stream).text();
@@ -499,7 +615,7 @@ async function parseBuffer(buf, name) {
     parsed = JSON.parse(text);
   } catch (err) {
     alert("could not parse replay file: " + err);
-    return;
+    return false;
   }
   const recordedAt = parsed.header?.recordedAt;
   // Normal recordings have a start timestamp. Hash older files without one so
@@ -508,11 +624,15 @@ async function parseBuffer(buf, name) {
     ? `recorded:${recordedAt}`
     : `sha256:${Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buf)),
       byte => byte.toString(16).padStart(2, "0")).join("")}`;
+  if (!parsed?.frames?.length) { alert("no frames in replay"); return false; }
   replay = parsed;
+  replaySource = { buf, gzipped };
+  setShared(sharedReplay);
+  // A local file replaces any shared replay, so leave its /<did>/<rkey> address.
+  if (!sharedReplay && location.pathname !== "/") history.pushState(null, "", "/");
   resetMarkerSprites();
-  frames = replay.frames || [];
+  frames = replay.frames;
   events = replay.events || [];
-  if (!frames.length) { alert("no frames in replay"); return; }
   preparePlayers();
   receptacles.setReplay(frames);
   receptacleFrame = -1;
@@ -526,6 +646,8 @@ async function parseBuffer(buf, name) {
   updateMeta();
   tick();
   setPlaying(false);
+  renderSharing();
+  return true;
 }
 
 async function loadUrl(url) {
@@ -534,8 +656,291 @@ async function loadUrl(url) {
   await parseBuffer(buf, url);
 }
 
+// ---------- Atmosphere sharing ----------
+const MAX_TYPICAL_BLOB_BYTES = 50 * 1024 * 1024;
+const dropEl = document.getElementById("drop"), dropStatus = document.getElementById("drop-status");
+const shareStatus = document.getElementById("share-status");
+const shareDialog = document.getElementById("share-dialog"), shareFormStatus = document.getElementById("share-form-status");
+const route = parseRoute(location.pathname);
+let recordSave = Promise.resolve();
+
+function megabytes(bytes) {
+  return bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function setStatus(el, text, error = false) {
+  el.textContent = text;
+  el.hidden = !text;
+  el.classList.toggle("error", error);
+}
+
+function actorLabel(did, handle) {
+  return handle ? `@${handle}` : did;
+}
+
+function setShared(value) {
+  shared = value && { ...value, nicknames: recordNicknames(value.record) };
+  const info = document.getElementById("replay-info");
+  info.hidden = !shared;
+  document.title = shared ? `${shared.record.title || "Shared replay"} · Big Replay` : "Big Replay";
+  if (!shared) return;
+  document.getElementById("replay-title").textContent = shared.record.title || "Untitled replay";
+  const byline = document.getElementById("replay-byline");
+  const by = document.createElement("a");
+  by.href = `/${shared.did}`;
+  by.textContent = actorLabel(shared.did, shared.handle);
+  const when = shared.record.recordedAt || shared.record.createdAt;
+  byline.replaceChildren("Shared by ", by, when ? ` · ${new Date(when).toLocaleDateString()}` : "");
+  const description = document.getElementById("replay-description");
+  description.textContent = shared.record.description || "";
+  description.hidden = !shared.record.description;
+}
+
+function renderSharing() {
+  const signedIn = !!account.did;
+  document.getElementById("sign-in-form").hidden = signedIn;
+  document.getElementById("sign-in").disabled = !account.client;
+  document.getElementById("account-signed-in").hidden = !signedIn;
+  if (signedIn) {
+    const link = document.getElementById("account-link");
+    link.href = `/${account.did}`;
+    link.textContent = actorLabel(account.did, account.handle);
+  }
+  document.getElementById("share-open").hidden = !(signedIn && replay && !shared);
+  document.getElementById("shared-actions").hidden = !shared;
+  if (shared) {
+    const link = replayLink(shared.did, shared.rkey);
+    document.getElementById("share-link").value = link;
+    const text = `${shared.record.title || "Big Walk replay"} ${link}`;
+    document.getElementById("share-bsky").href = `https://bsky.app/intent/compose?text=${encodeURIComponent(text)}`;
+    document.getElementById("delete-replay").hidden = !nicknamesSaveToRecord();
+  }
+}
+
+// Serialized so each putRecord swaps against the CID from the previous save.
+function saveRecordNickname(id, value) {
+  const target = shared, status = document.getElementById("nickname-status");
+  if (value) target.nicknames.set(id, value);
+  else target.nicknames.delete(id);
+  refreshPlayerLabels();
+  status.textContent = "Saving nickname…";
+  recordSave = recordSave.then(async () => {
+    const next = withNickname(target.record, id, value, playerNames.get(id));
+    const { cid } = await account.putReplay(target.rkey, next, target.cid);
+    target.record = next;
+    target.cid = cid;
+    if (shared === target) status.textContent = value ? "Nickname saved to your shared replay." : "Nickname removed from your shared replay.";
+  }).catch(err => {
+    target.nicknames = recordNicknames(target.record);
+    if (shared !== target) return;
+    status.textContent = `Could not save nickname: ${err.message}`;
+    renderPlayerSettings();
+    refreshPlayerLabels();
+  });
+}
+
+function replayStats() {
+  const occupants = receptacles.at(frames.length - 1);
+  let gourdsPlaced = 0, towersCompleted = 0;
+  for (const group of receptacles.groups) {
+    let filled = 0;
+    for (let i = 0; i < group.count; i++) if (occupants[group.start + i] !== null) filled++;
+    gourdsPlaced += filled;
+    if (filled === group.count) towersCompleted++;
+  }
+  return {
+    maxPlayers: Math.max(...frames.map(frame => frame.players.length)),
+    gourdsPlaced,
+    towersCompleted,
+    deaths: events.filter(ev => ev.type === "death").length,
+  };
+}
+
+function replayDurationMs() {
+  return (frames[frames.length - 1].time - frames[0].time) * 1000;
+}
+
+async function gzipBytes(buf) {
+  const stream = new Blob([buf]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Response(stream).arrayBuffer();
+}
+
+function openShareDialog() {
+  const players = [...playerNames].filter(([, name]) => name).map(([, name]) => name);
+  const count = playerNames.size;
+  document.getElementById("share-title-input").value =
+    `Big Walk · ${count} player${count === 1 ? "" : "s"} · ${fmt(replayDurationMs() / 1000)}`;
+  document.getElementById("share-description").value = "";
+  const size = replaySource.gzipped ? megabytes(replaySource.buf.byteLength) : "compressed on upload";
+  document.getElementById("share-summary").textContent =
+    `File: ${size}. Recorded names: ${players.length ? players.join(", ") : "none"}.`;
+  const large = replaySource.gzipped && replaySource.buf.byteLength > MAX_TYPICAL_BLOB_BYTES;
+  setStatus(shareFormStatus, large ? "This file is larger than 50 MB, which many servers reject." : "", large);
+  document.getElementById("share-publish").disabled = false;
+  shareDialog.showModal();
+}
+
+async function publishReplay(event) {
+  event.preventDefault();
+  const publish = document.getElementById("share-publish");
+  publish.disabled = true;
+  try {
+    const bytes = replaySource.gzipped ? replaySource.buf : await gzipBytes(replaySource.buf);
+    setStatus(shareFormStatus, `Uploading ${megabytes(bytes.byteLength)}…`);
+    const blob = await account.uploadBlob(bytes, "application/gzip");
+    setStatus(shareFormStatus, "Publishing…");
+    const players = [...playerNames].sort((a, b) => a[0] - b[0]).map(([netId, name]) => ({ netId, name }));
+    const record = buildReplayRecord({
+      blob,
+      title: document.getElementById("share-title-input").value.trim(),
+      description: document.getElementById("share-description").value.trim(),
+      header: replay.header,
+      players,
+      stats: replayStats(),
+      durationMs: replayDurationMs(),
+      createdAt: new Date().toISOString(),
+    });
+    const { uri, cid } = await account.createReplay(record);
+    const rkey = rkeyFromUri(uri);
+    setShared({ did: account.did, handle: account.handle, pds: account.pds, rkey, cid, record });
+    history.pushState(null, "", replayPath(account.did, rkey));
+    shareDialog.close();
+    renderSharing();
+    preparePlayers();
+    refreshPlayerLabels();
+    setStatus(shareStatus, "Published! Anyone with the link can watch this replay.");
+  } catch (err) {
+    setStatus(shareFormStatus, `Could not publish: ${err.message}`, true);
+    publish.disabled = false;
+  }
+}
+
+async function deleteSharedReplay() {
+  if (!confirm("Delete this shared replay? The link will stop working for everyone.")) return;
+  const target = shared;
+  try {
+    await recordSave;
+    await account.deleteReplay(target.rkey);
+    if (shared !== target) return;
+    setShared(null);
+    history.replaceState(null, "", "/");
+    renderSharing();
+    preparePlayers();
+    refreshPlayerLabels();
+    setStatus(shareStatus, "Deleted. The replay is still open here, and you can share it again.");
+  } catch (err) {
+    setStatus(shareStatus, `Could not delete: ${err.message}`, true);
+  }
+}
+
+async function loadSharedReplay(actor, rkey) {
+  dropEl.classList.add("shared-loading");
+  setStatus(dropStatus, "Looking up replay…");
+  try {
+    const who = await resolveActor(actor);
+    const { cid, value } = await getReplayRecord(who.pds, who.did, rkey);
+    if (value?.format !== REPLAY_FORMAT_JSON_GZ_V1) throw new Error("This replay uses a format this viewer does not understand yet.");
+    const blob = blobCid(value.replay);
+    if (!blob) throw new Error("The replay record has no file.");
+    const buf = await downloadBlob(blobUrl(who.pds, who.did, blob), (loaded, total) =>
+      setStatus(dropStatus, `Downloading replay… ${megabytes(loaded)}${total ? ` of ${megabytes(total)}` : ""}`));
+    setStatus(dropStatus, "Opening replay…");
+    if (await parseBuffer(buf, "replay.json.gz", { ...who, rkey, cid, record: value })) setStatus(dropStatus, "");
+  } catch (err) {
+    setStatus(dropStatus, `Could not load this replay: ${err.message}`, true);
+    dropEl.classList.remove("shared-loading");
+  }
+}
+
+async function listReplays(actor, own) {
+  const list = document.getElementById("replay-list"), items = document.getElementById("replay-list-items");
+  const title = document.getElementById("replay-list-title"), status = document.getElementById("replay-list-status");
+  list.hidden = false;
+  items.replaceChildren();
+  title.textContent = own ? "Your shared replays" : "Shared replays";
+  status.textContent = "Loading…";
+  try {
+    const who = await resolveActor(actor);
+    if (!own) title.textContent = `Replays shared by ${actorLabel(who.did, who.handle)}`;
+    let cursor, count = 0;
+    do {
+      const page = await listReplayRecords(who.pds, who.did, cursor);
+      for (const { uri, value } of page.records || []) {
+        const item = document.createElement("li");
+        item.className = "replay-item";
+        const link = document.createElement("a");
+        link.href = replayPath(who.did, rkeyFromUri(uri));
+        const when = document.createElement("span");
+        when.className = "when";
+        const date = value.recordedAt || value.createdAt;
+        when.textContent = [
+          date && new Date(date).toLocaleString(),
+          Number.isInteger(value.durationMs) && fmt(value.durationMs / 1000),
+          value.players?.length && `${value.players.length} players`,
+        ].filter(Boolean).join(" · ");
+        link.append(value.title || "Untitled replay", when);
+        item.append(link);
+        items.append(item);
+        count++;
+      }
+      cursor = page.cursor;
+    } while (cursor && count < 500);
+    status.textContent = count ? "" : own ? "Nothing shared yet. Open a replay and choose Share." : "No shared replays yet.";
+  } catch (err) {
+    status.textContent = `Could not list replays: ${err.message}`;
+  }
+}
+
+document.getElementById("sign-in-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const handle = document.getElementById("sign-in-handle").value.trim().replace(/^@/, "");
+  if (!handle || !account.client) return;
+  setStatus(shareStatus, "Continue signing in in the popup window…");
+  try {
+    await account.signIn(handle);
+    setStatus(shareStatus, "");
+  } catch (err) {
+    setStatus(shareStatus, `Could not sign in: ${err.message}`, true);
+  }
+});
+document.getElementById("sign-out").addEventListener("click", () => account.signOut());
+document.getElementById("share-open").addEventListener("click", openShareDialog);
+document.getElementById("share-cancel").addEventListener("click", () => shareDialog.close());
+document.getElementById("share-form").addEventListener("submit", publishReplay);
+document.getElementById("delete-replay").addEventListener("click", deleteSharedReplay);
+document.getElementById("copy-link").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(document.getElementById("share-link").value);
+    setStatus(shareStatus, "Link copied.");
+  } catch {
+    document.getElementById("share-link").select();
+  }
+});
+addEventListener("popstate", () => location.reload());
+account.addEventListener("change", () => {
+  renderSharing();
+  if (replay) {
+    renderPlayerSettings();
+    document.getElementById("nickname-status").textContent = nicknameStatusText();
+    refreshPlayerLabels();
+  }
+  if (route.kind === "home" && !replay) {
+    if (account.did) listReplays(account.did, true);
+    else document.getElementById("replay-list").hidden = true;
+  }
+});
+account.init().catch(err => {
+  // In the sign-in popup, the opener takes over and this window closes.
+  if (typeof AtprotoOAuth !== "undefined" && err instanceof AtprotoOAuth.LoginContinuedInParentWindowError) return;
+  setStatus(shareStatus, `Sign-in unavailable: ${err.message}`, true);
+}).finally(renderSharing);
+renderSharing();
+
 const urlParam = new URLSearchParams(location.search).get("replay");
-if (urlParam) loadUrl(urlParam);
+if (route.kind === "replay") loadSharedReplay(route.actor, route.rkey);
+else if (route.kind === "actor") listReplays(route.actor, false);
+else if (route.kind === "unknown") setStatus(dropStatus, "There's nothing at this address.", true);
+else if (urlParam) loadUrl(urlParam);
 function updateMeta() {
   const h = replay.header || {};
   document.getElementById("meta").textContent =

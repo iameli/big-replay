@@ -10,6 +10,8 @@ Big Replay is a tool for recording character positions in Big Walk and playing t
 - `src/BigReplay.Desktop/` — native Windows GUI: watch for the game and record automatically.
 - `schemas/` — JSON Schema for replay files (the contract the web front-end validates against).
 - `index.html`, `map-view.js`, `gourd-receptacles.js`, `bigmap.jpeg` — root-level replay viewer and map assets.
+- `atproto.js`, `oauth-client-metadata.json`, `vendor/` — Atmosphere sign-in and replay sharing for the viewer.
+- `lexicons/` — atproto lexicons (`com.iameli.bigWalk.*`) for shared replays.
 - `docs/` — format spec + the read-only/no-writes trust story.
 
 ## Status
@@ -161,7 +163,8 @@ opaque background only for the Apple touch icon and installer sidebar.
 
 Open the **[live Big Replay viewer](https://big-replay.iame.li/)** in a current
 Chromium browser and choose or drop a `.replay.json.gz` / `.json` recording.
-Chosen files are read locally in your browser, not uploaded.
+Chosen files are read locally in your browser and are only uploaded if you sign in
+and choose **Share** (see [Sharing replays](#sharing-replays)).
 [Try the bundled sample](https://big-replay.iame.li/?replay=sample.replay.json.gz).
 The **Download Big Replay** button in the top-right of the controls opens the latest
 release in a new tab without interrupting the viewer.
@@ -176,6 +179,11 @@ remain unchanged.
 For offline use, open the root `index.html` from a checkout. Keep `map-view.js`,
 `gourd-receptacles.js`, and `bigmap.jpeg` beside it. No build or package install is needed. Alternatively,
 serve the repository root with a static HTTP server and open `/?replay=run1.replay.json.gz`.
+
+Sharing needs the viewer served over HTTP. For local development run
+`python3 scripts/serve.py` and open `http://127.0.0.1:8080/`; like the published
+site, it answers `/<did>/<rkey>` paths with the viewer. Use `127.0.0.1`, not
+`localhost`, so the development OAuth client can sign in.
 
 Browser-saved calibration and display preferences are per origin; settings from
 the former `github.io` site do not automatically transfer to the custom domain.
@@ -193,6 +201,32 @@ The sidebar groups Map display, Player names & colors, Tower progress, Map align
 Events into collapsible sections. Click a heading, or focus it and press Enter
 or Space, to toggle it. Map alignment starts collapsed; the other sections start open.
 **Map display** contains the Trails dropdown and marker legend.
+
+### Sharing replays
+
+Sign in under **Share** with an Atmosphere account (such as Bluesky) to publish a
+replay you have opened. Sign-in happens in a popup, so the open replay stays put.
+**Share this replay…** asks for a title and optional description, then uploads the
+replay file as a blob to your PDS and creates a `com.iameli.bigWalk.replay` record
+(see `lexicons/`). Shared replays are public: anyone with the link can watch them,
+including every player's recorded Steam name. Many PDSes limit blobs to 50 MB.
+
+Links look like `https://big-replay.iame.li/<did>/<rkey>`. A handle also works in
+place of the DID, and `https://big-replay.iame.li/<did-or-handle>` lists that
+account's shared replays. Signed in, the home page lists your own. A first path
+segment containing `:` is a DID and one containing `.` is a handle, so any other
+top-level path stays available for the app. Loading a shared replay needs no
+sign-in: the viewer resolves the account's PDS and fetches the record and blob.
+
+On your own shared replay, **Edit nicknames** saves to the published record, so
+everyone sees them; the recorded Steam names are kept alongside. Viewing someone
+else's replay shows their nicknames unless you set your own, which stay in your
+browser. **Delete shared replay** removes the record (the PDS then drops the blob);
+the replay stays open locally and can be shared again.
+
+The OAuth client asks only for `repo:com.iameli.bigWalk.replay` and blob uploads.
+`vendor/atproto-oauth.js` is a committed bundle of `@atproto/oauth-client-browser`;
+rebuild it with `pnpm install --frozen-lockfile && pnpm build` in `vendor/build/`.
 
 ### Markers, trails, and player names
 

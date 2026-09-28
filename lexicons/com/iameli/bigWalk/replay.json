@@ -1,0 +1,78 @@
+{
+  "lexicon": 1,
+  "id": "com.iameli.bigWalk.replay",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A recorded Big Walk run. Frame data lives in the replay blob; the record carries browsable metadata.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["replay", "format", "createdAt"],
+        "properties": {
+          "replay": {
+            "type": "blob",
+            "description": "The replay file, encoded as described by format.",
+            "accept": ["application/gzip"],
+            "maxSize": 104857600
+          },
+          "format": {
+            "type": "string",
+            "description": "Encoding of the replay blob.",
+            "knownValues": ["com.iameli.bigWalk.replay#jsonGzV1"]
+          },
+          "title": { "type": "string", "maxLength": 1000, "maxGraphemes": 100 },
+          "description": { "type": "string", "maxLength": 10000, "maxGraphemes": 1000 },
+          "recordedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When the recorder started capturing (replay header recordedAt)."
+          },
+          "durationMs": { "type": "integer", "minimum": 0 },
+          "gameVersion": { "type": "string", "maxLength": 64 },
+          "players": {
+            "type": "array",
+            "maxLength": 64,
+            "items": { "type": "ref", "ref": "#player" }
+          },
+          "stats": { "type": "ref", "ref": "#stats" },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    },
+    "player": {
+      "type": "object",
+      "description": "A player appearing in the replay, keyed by their session-local network ID.",
+      "required": ["netId"],
+      "properties": {
+        "netId": { "type": "integer", "description": "Mirror network ID; only unique within this replay." },
+        "name": {
+          "type": "string",
+          "maxLength": 640,
+          "maxGraphemes": 64,
+          "description": "Steam display name scraped from the game at record time."
+        },
+        "nickname": {
+          "type": "string",
+          "maxLength": 640,
+          "maxGraphemes": 64,
+          "description": "Display name chosen by the replay owner; shown instead of name when set."
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "description": "Summary of the run at its final frame, as computed by the viewer at upload.",
+      "properties": {
+        "maxPlayers": { "type": "integer", "minimum": 0 },
+        "gourdsPlaced": { "type": "integer", "minimum": 0 },
+        "towersCompleted": { "type": "integer", "minimum": 0 },
+        "deaths": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "jsonGzV1": {
+      "type": "token",
+      "description": "Gzip-compressed JSON matching schemas/replay-v1.schema.json (formatVersion 1)."
+    }
+  }
+}

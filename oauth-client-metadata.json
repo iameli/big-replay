@@ -1,0 +1,13 @@
+{
+  "client_id": "https://big-replay.iame.li/oauth-client-metadata.json",
+  "client_name": "Big Replay",
+  "client_uri": "https://big-replay.iame.li/",
+  "logo_uri": "https://big-replay.iame.li/icons/icon-192.png",
+  "redirect_uris": ["https://big-replay.iame.li/"],
+  "scope": "atproto repo:com.iameli.bigWalk.replay blob:*/*",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "application_type": "web",
+  "token_endpoint_auth_method": "none",
+  "dpop_bound_access_tokens": true
+}

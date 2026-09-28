@@ -20,7 +20,8 @@ The recorder is designed so speedrunners can run it without worrying about game 
   no loader, no hooks, no debugger.
 - **No allocs** in the game. `VirtualAllocEx` is never called.
 - **No game file modifications.** The game folder and profile stay untouched.
-- **No network.** The recorder writes a local replay file only.
+- **No network.** The recorder writes a local replay file only. Sharing happens
+  separately in the web viewer, and only when you sign in and choose **Share**.
 
 The one process-level interaction is opening a handle with read access — the same access any
 memory probe takes. Pure reads cannot change game state.

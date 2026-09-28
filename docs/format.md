@@ -69,6 +69,18 @@ not in the replay format. See the README for alignment steps and accuracy limits
 - `gourd-pinned` — a monument slot becomes filled (detail = saveableHomeName)
 - `tower-filled` — all slots of a tower group filled (detail = tower key)
 
+## Shared replays (atproto)
+
+Published replays are `com.iameli.bigWalk.replay` records
+(`lexicons/com/iameli/bigWalk/replay.json`). The unchanged `.replay.json.gz` file
+is the record's `replay` blob, and `format` names its encoding
+(`com.iameli.bigWalk.replay#jsonGzV1` for this v1 format). The record carries
+browsable metadata only (title, description, recordedAt, integer `durationMs`,
+gameVersion, players, stats); atproto records cannot hold floats, so positions
+stay in the blob. Each player entry keeps the recorded Steam `name` and an
+optional owner-chosen `nickname`, keyed by `netId`. A new blob encoding gets a
+new `format` token rather than a new collection.
+
 ## Schema
 
 `schemas/replay-v1.schema.json` is the contract the web viewer validates against.

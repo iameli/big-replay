@@ -1,0 +1,18 @@
+{
+  "name": "big-replay-vendor",
+  "private": true,
+  "description": "Builds vendor/atproto-oauth.js, the browser OAuth client bundle committed for the static viewer.",
+  "scripts": {
+    "build": "esbuild entry.js --bundle --minify --format=iife --global-name=AtprotoOAuth --target=es2022 --legal-comments=eof --outfile=../atproto-oauth.js"
+  },
+  "dependencies": {
+    "@atproto/oauth-client-browser": "0.5.7",
+    "esbuild": "0.28.2"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
