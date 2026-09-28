@@ -166,6 +166,32 @@ test('loading another replay releases old pixels and breaks lines at invalid pos
   assert.deepEqual(dots, new Set(['10,20', '30,40']));
 });
 
+test('the end-of-run secret room teleport breaks trails instead of drawing across the map', () => {
+  const view = makeView();
+  const at = (x, y, z) => ({ players: [{ netId: 7, x, y, z }] });
+  // Walk on the island, teleport into the room (x≈728, y≈-24, z≈340), then leave it again.
+  view.setReplay([at(-133, 11, -437), at(-130, 11, -436), at(728, -24, 340), at(729, -24, 341),
+    at(-120, 11, -430), at(-118, 11, -429)]);
+  const segments = path => {
+    const lines = [];
+    let previous;
+    for (const [op, x, z] of path.commands) {
+      if (op === 'L' && previous) lines.push([previous, [x, z]]);
+      previous = [x, z];
+    }
+    return lines;
+  };
+  const longest = path => Math.max(0, ...segments(path).map(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1])));
+  const persistent = statePath(view.getRasterCache('persistent', 5, identity).states[0]);
+  assert.ok(longest(persistent) < 5, 'no persistent trail segment may span the teleport');
+  assert.ok(longest(view.recentPath(view.routes[0], 5)) < 5, 'no recent trail segment may span the teleport');
+  assert.ok(segments(persistent).some(([a]) => a[0] === 728), 'movement inside the room still draws');
+  // Ordinary play near (but outside) the room stays one continuous trail.
+  view.setReplay([at(728, 5, 340), at(729, 5, 341), at(730, 5, 342)]);
+  assert.equal(statePath(view.getRasterCache('persistent', 2, identity).states[0])
+    .commands.filter(([op]) => op === 'M').length, 1);
+});
+
 test('mutable RDP revisions replace old geometry and dirty both old and new tile coverage', () => {
   const { view, draw } = drawingView([[0, 0, 10], [1, 200, 10.2], [2, 400, 10.4], [3, 600, 10]]);
   const cache = draw(2), state = cache.states[0];

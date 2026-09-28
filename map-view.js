@@ -6,6 +6,25 @@ const MAP_STORAGE = "big-walk:bigmap-4096:calibration:v1";
 const ROUTE_BLOCK_SIZE = 256;
 const TRAIL_TILE_SIZE = 256; // Device pixels; the halo is cropped when compositing.
 const TRAIL_CACHE_BYTES = 64 * 1024 * 1024;
+// Big Game 1.5.1: after the final monument, everyone is teleported to a hangout room
+// off the east coast (below sea level) for about two minutes. Measured from the
+// 12-player WR recordings, where players stayed within x 724–733, y -24.7–-22.9,
+// z 336.7–346.2; nobody comes within 80 m of it before then. Trails break when a
+// player enters or leaves it, so the teleport does not streak across the map.
+const SECRET_ROOM = Object.freeze({ minX: 700, maxX: 760, minY: -40, maxY: -10, minZ: 310, maxZ: 370 });
+
+function inSecretRoom(p) {
+  return p.x >= SECRET_ROOM.minX && p.x <= SECRET_ROOM.maxX &&
+    p.y >= SECRET_ROOM.minY && p.y <= SECRET_ROOM.maxY &&
+    p.z >= SECRET_ROOM.minZ && p.z <= SECRET_ROOM.maxZ;
+}
+
+// Samples are [frameIndex, x, z, breakBefore?]. A trail continues only across
+// consecutive recorded frames, and never across a secret-room teleport.
+function continuesTrail(previous, sample) {
+  return previous[0] + 1 === sample[0] && !sample[3];
+}
+
 // Aligned against the full train circuit on bigmap.jpeg.
 const DEFAULT_MAP_TRANSFORM = Object.freeze({
   xx: 1.916268922611503,
@@ -167,10 +186,12 @@ class MapView {
         if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
         let route = routes.get(p.netId);
         if (!route) {
-          route = { netId: p.netId, samples: [], tolerance: null };
+          route = { netId: p.netId, samples: [], tolerance: null, inRoom: false };
           routes.set(p.netId, route);
         }
-        route.samples.push([index, p.x, p.z]);
+        const inRoom = inSecretRoom(p);
+        route.samples.push(route.samples.length && inRoom !== route.inRoom ? [index, p.x, p.z, true] : [index, p.x, p.z]);
+        route.inRoom = inRoom;
         minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
         minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
       }
@@ -341,11 +362,11 @@ class MapView {
     const path = new Path2D(), stack = [];
     if (start >= end) return path;
     // Adjacent blocks share their boundary segment, but never bridge a missing frame.
-    if (start > 0 && samples[start - 1][0] === samples[start][0] - 1) start--;
+    if (start > 0 && continuesTrail(samples[start - 1], samples[start])) start--;
     const limit = tolerance * tolerance;
     while (start < end) {
       let last = start;
-      while (last + 1 < end && samples[last + 1][0] === samples[last][0] + 1) last++;
+      while (last + 1 < end && continuesTrail(samples[last], samples[last + 1])) last++;
       path.moveTo(samples[start][1], samples[start][2]);
       stack.push(start, last);
       // Iterative Ramer–Douglas–Peucker, bounded to one block rather than the whole run.
@@ -381,7 +402,7 @@ class MapView {
 
   sampleBounds(samples, start, end) {
     if (start >= end) return null;
-    if (start > 0 && samples[start - 1][0] === samples[start][0] - 1) start--;
+    if (start > 0 && continuesTrail(samples[start - 1], samples[start])) start--;
     const bounds = [Infinity, Infinity, -Infinity, -Infinity];
     for (let i = start; i < end; i++) {
       bounds[0] = Math.min(bounds[0], samples[i][1]);
@@ -412,7 +433,7 @@ class MapView {
     const path = new Path2D();
     for (let i = start; i < end; i++) {
       const [, x, z] = samples[i];
-      if (i === start || samples[i - 1][0] !== samples[i][0] - 1) path.moveTo(x, z);
+      if (i === start || !continuesTrail(samples[i - 1], samples[i])) path.moveTo(x, z);
       path.lineTo(x, z);
     }
     return path;
@@ -535,7 +556,7 @@ class MapView {
       let stationary = true;
       for (let i = state.end; i < end; i++) {
         const a = samples[i - 1], b = samples[i];
-        if (a[0] + 1 !== b[0] || a[1] !== b[1] || a[2] !== b[2]) {
+        if (!continuesTrail(a, b) || a[1] !== b[1] || a[2] !== b[2]) {
           stationary = false; break;
         }
       }

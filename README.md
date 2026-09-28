@@ -278,7 +278,10 @@ The **Trails** dropdown offers **Off**, **Recent** (the last 40 frame intervals)
 and **Persistent · start to now**. Persistent trails retain each player's history
 up to the current replay frame, including players who have left. Scrubbing backward
 removes future movement; missing player samples break the line rather than drawing
-a jump. The trail mode is remembered in this browser. **Show full player routes**
+a jump. Trails also break when a player enters or leaves the hangout room the game
+teleports everyone to after the final monument (a box around x 728, y -24, z 340,
+off the east coast; `SECRET_ROOM` in `map-view.js`), so the end of a run does not
+draw lines across the map. Movement inside the room still draws. The trail mode is remembered in this browser. **Show full player routes**
 under alignment is separate: it deliberately includes future positions as well.
 
 Persistent trails and full routes retain the **0.25 CSS pixel** simplification
