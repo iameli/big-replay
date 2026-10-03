@@ -273,9 +273,12 @@ its last frame if it finishes before the replay. This removes the long black
 pre-roll while keeping every player's audio aligned on its own output track.
 
 For a finished composite, **Mosaic starts at replay** maps video time zero back to
-the replay timeline. Scrubbing before that timestamp shows empty tiles; later
-timestamps seek to `replay time − mosaic start`. If a test clip ends before the
-replay, its last frame remains visible while the replay continues.
+the replay timeline. Shared replays open at the first recorded frame at or after
+that timestamp, and the timeline omits the earlier loading section. Later timestamps
+seek to `replay time − mosaic start`. Scrubbing while playback is running pauses
+the replay clock until the mosaic reaches the requested frame, then resumes
+automatically. If a test clip ends before the replay, its last frame remains visible
+while the replay continues.
 
 The sidebar groups Map display, Player video, Player names & colors, Tower progress,
 Map alignment, and Events into collapsible sections. An AT Protocol record section

@@ -511,7 +511,8 @@ const labelFont = "bold 12px system-ui";
 const labelMeasure = new OffscreenCanvas(1, 1).getContext("2d");
 let markerSpriteBytes = 0, markerSpriteDpr = devicePixelRatio, markerLabelDirection = "ltr";
 
-let replay = null, frames = [], events = [], frameIdx = 0, playing = false, speed = 1;
+let replay = null, frames = [], events = [], frameIdx = 0, playbackStartFrame = 0;
+let playing = false, speed = 1;
 // replaySource: the loaded file's bytes, kept for publishing. shared: the
 // Atmosphere record being viewed ({ did, handle, pds, rkey, cid, record, nicknames }).
 let replaySource = null, shared = null;
@@ -527,10 +528,11 @@ const layoutButtons = [...document.querySelectorAll("#layout-picker [data-layout
 const layoutPlayerButtons = layoutButtons.filter(button => button.dataset.layoutKey !== "map");
 const layoutStatus = document.getElementById("layout-status");
 const mosaicStartInput = document.getElementById("mosaic-start");
-function setMosaicStartTime(seconds) {
+function setMosaicStartTime(seconds, updatePlayback = true) {
   const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
   mosaicStartInput.value = value.toFixed(3);
   mosaicVideo.setTimelineStart(value);
+  if (updatePlayback) updatePlaybackStart(true);
 }
 mosaicStartInput.addEventListener("change", () => setMosaicStartTime(Number(mosaicStartInput.value)));
 const scrub = document.getElementById("scrub"), timeEl = document.getElementById("time");
@@ -963,7 +965,7 @@ async function parseBuffer(buf, name, sharedReplay = null) {
   replay = parsed;
   replaySource = { buf, gzipped };
   mosaicVideo.reset();
-  setMosaicStartTime(0);
+  setMosaicStartTime(0, false);
   setShared(sharedReplay);
   // A local file replaces any shared replay, so leave its /<did>/<rkey> address.
   if (!sharedReplay && location.pathname !== "/") history.pushState(null, "", "/");
@@ -973,6 +975,8 @@ async function parseBuffer(buf, name, sharedReplay = null) {
   resetMarkerSprites();
   frames = replay.frames;
   events = replay.events || [];
+  updatePlaybackStart(false);
+  frameIdx = playbackStartFrame;
   preparePlayers();
   receptacles.setReplay(frames);
   receptacleFrame = -1;
@@ -980,9 +984,8 @@ async function parseBuffer(buf, name, sharedReplay = null) {
   document.getElementById("drop").classList.add("hidden");
   renderTowers();
   renderEvents();
-  frameIdx = 0;
   scrub.max = frames.length - 1;
-  scrub.value = 0;
+  scrub.value = frameIdx;
   updateMeta();
   tick();
   setPlaying(false);
@@ -1043,7 +1046,7 @@ function setShared(value) {
   description.hidden = !shared.record.description;
   const videoUri = streamplaceVideoUri(shared.record.video);
   if (videoUri) {
-    setMosaicStartTime(Number.isInteger(shared.record.videoStartMs) ? shared.record.videoStartMs / 1000 : 0);
+    setMosaicStartTime(Number.isInteger(shared.record.videoStartMs) ? shared.record.videoStartMs / 1000 : 0, false);
     mosaicVideo.loadStreamplace(videoUri);
   }
 }
@@ -1633,9 +1636,27 @@ function fmt(s) {
   return `${m}:${String(r).padStart(2, "0")}`;
 }
 
+function seekReplayFrame(index) {
+  if (!frames.length) return;
+  frameIdx = Math.min(frames.length - 1, Math.max(playbackStartFrame, Number(index) || 0));
+  playbackTime = frames[frameIdx].time;
+  lastTick = performance.now();
+  tick();
+}
+
+function updatePlaybackStart(seekCurrent) {
+  if (!frames.length) {
+    playbackStartFrame = 0;
+    return;
+  }
+  playbackStartFrame = replayFrameIndexAtOrAfter(frames, mosaicVideo.timelineStart);
+  scrub.min = playbackStartFrame;
+  if (seekCurrent && frameIdx < playbackStartFrame) seekReplayFrame(playbackStartFrame);
+}
+
 function setPlaying(v) {
   v = Boolean(v && replay);
-  if (v && replay && frameIdx === frames.length - 1) { frameIdx = 0; tick(); }
+  if (v && replay && frameIdx === frames.length - 1) seekReplayFrame(playbackStartFrame);
   playbackTime = frames[frameIdx]?.time || 0;
   lastTick = performance.now();
   playing = v;
@@ -1645,8 +1666,42 @@ function setPlaying(v) {
   sourceVideoSync.sync(playbackTime, playing, speed, true);
 }
 
-playBtn.addEventListener("click", () => setPlaying(!playing));
-scrub.addEventListener("input", () => { setPlaying(false); frameIdx = +scrub.value; tick(); });
+let scrubActive = false, resumeAfterScrub = false, scrubGeneration = 0;
+function beginScrub() {
+  if (scrubActive) return;
+  scrubActive = true;
+  scrubGeneration++;
+  resumeAfterScrub = playing;
+  setPlaying(false);
+}
+
+function finishScrub() {
+  if (!scrubActive) return;
+  scrubActive = false;
+  const resume = resumeAfterScrub, generation = ++scrubGeneration;
+  resumeAfterScrub = false;
+  if (!resume) return;
+  mosaicVideo.waitForSeek().then(() => {
+    if (generation === scrubGeneration && !scrubActive && !playing) setPlaying(true);
+  });
+}
+
+playBtn.addEventListener("click", () => {
+  scrubGeneration++;
+  scrubActive = false;
+  setPlaying(!playing);
+});
+scrub.addEventListener("pointerdown", beginScrub);
+scrub.addEventListener("keydown", event => {
+  if (["ArrowLeft", "ArrowRight", "PageDown", "PageUp", "Home", "End"].includes(event.key)) beginScrub();
+});
+scrub.addEventListener("input", () => {
+  beginScrub();
+  seekReplayFrame(+scrub.value);
+});
+scrub.addEventListener("change", finishScrub);
+scrub.addEventListener("pointerup", finishScrub);
+scrub.addEventListener("pointercancel", finishScrub);
 for (const [mult, btn] of [[1, document.getElementById("sp1")], [2, document.getElementById("sp2")], [4, document.getElementById("sp4")], [8, document.getElementById("sp8")]]) {
   btn.addEventListener("click", () => {
     speed = mult;
@@ -1717,8 +1772,7 @@ function renderEvents() {
     el.addEventListener("click", () => {
       setPlaying(false);
       const next = frames.findIndex(fr => fr.time >= ev.time);
-      frameIdx = next < 0 ? frames.length - 1 : next;
-      tick();
+      seekReplayFrame(next < 0 ? frames.length - 1 : next);
     });
     eventsEl.appendChild(el);
   }

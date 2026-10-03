@@ -7,6 +7,17 @@ function streamplacePlaylistUrl(uri) {
   return `${STREAMPLACE_PLAYLIST_ENDPOINT}?uri=${encodeURIComponent(uri)}`;
 }
 
+function replayFrameIndexAtOrAfter(frames, time) {
+  if (!Array.isArray(frames) || !frames.length || !Number.isFinite(time)) return 0;
+  let low = 0, high = frames.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (frames[middle].time < time) low = middle + 1;
+    else high = middle;
+  }
+  return Math.min(low, frames.length - 1);
+}
+
 class MosaicVideo {
   static COLUMNS = 4;
   static ROWS = 3;
@@ -54,7 +65,10 @@ class MosaicVideo {
 
     video.addEventListener("loadedmetadata", () => this.loadedMetadata());
     video.addEventListener("loadeddata", () => this.draw());
-    video.addEventListener("seeked", () => this.draw());
+    video.addEventListener("seeked", () => {
+      this.draw();
+      this.resumePlayback();
+    });
     video.addEventListener("error", () => {
       this.ready = false;
       this.status.textContent = this.sourceKind === "streamplace"
@@ -208,17 +222,63 @@ class MosaicVideo {
     const end = Number.isFinite(this.video.duration) ? Math.max(0, this.video.duration - 0.001) : videoTime;
     const target = Math.min(videoTime, end);
     this.video.playbackRate = Math.min(16, Math.max(0.0625, rate));
-    if (forceSeek || !playing || Math.abs(this.video.currentTime - target) > 0.25) {
-      this.video.currentTime = target;
-    }
-    if (playing && videoTime < this.video.duration) {
-      if (this.video.paused) this.video.play().catch(() => {
-        this.status.textContent = "Video is ready; press Play again if the browser blocked playback.";
-      });
-    } else {
-      this.video.pause();
-    }
+    const drift = Math.abs(this.video.currentTime - target);
+    const seekThreshold = forceSeek || !playing ? 0.001 : 0.25;
+    if (!this.video.seeking && drift > seekThreshold) this.video.currentTime = target;
+    if (playing && videoTime < this.video.duration) this.resumePlayback();
+    else this.video.pause();
     if (!playing) this.draw();
+  }
+
+  resumePlayback() {
+    const videoTime = this.targetTime - this.timelineStart;
+    if (!this.ready || !this.shouldPlay || videoTime < 0 || videoTime >= this.video.duration) return;
+    if (this.video.paused) this.video.play().catch(() => {
+      this.status.textContent = "Video is ready; press Play again if the browser blocked playback.";
+    });
+  }
+
+  waitForSeek() {
+    if (!this.ready) return Promise.resolve();
+    const token = this.loadToken;
+    return new Promise(resolve => {
+      let cleanup = () => {};
+      const finish = () => {
+        cleanup();
+        resolve();
+      };
+      const settle = () => {
+        cleanup();
+        if (!this.ready || token !== this.loadToken) {
+          finish();
+          return;
+        }
+        const videoTime = this.targetTime - this.timelineStart;
+        const end = Number.isFinite(this.video.duration)
+          ? Math.max(0, this.video.duration - 0.001)
+          : videoTime;
+        const target = Math.min(Math.max(0, videoTime), end);
+        if (!this.video.seeking && Math.abs(this.video.currentTime - target) <= 0.001) {
+          finish();
+          return;
+        }
+        const onSeeked = () => settle();
+        const onStopped = () => finish();
+        cleanup = () => {
+          this.video.removeEventListener("seeked", onSeeked);
+          this.video.removeEventListener("error", onStopped);
+          this.video.removeEventListener("emptied", onStopped);
+        };
+        this.video.addEventListener("seeked", onSeeked);
+        this.video.addEventListener("error", onStopped);
+        this.video.addEventListener("emptied", onStopped);
+        if (!this.video.seeking) {
+          this.video.currentTime = target;
+          if (!this.video.seeking) finish();
+        }
+      };
+      settle();
+    });
   }
 
   draw() {
