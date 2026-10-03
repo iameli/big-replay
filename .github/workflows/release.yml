@@ -103,7 +103,7 @@ jobs:
       - name: Stage viewer site
         run: |
           mkdir -p _site/icons _site/vendor
-          cp index.html atproto.js replay-players.js map-view.js gourd-receptacles.js bigmap.jpeg og-card.jpg sample.replay.json.gz CNAME logo.svg favicon.ico site.webmanifest oauth-client-metadata.json _site/
+          cp index.html atproto.js atproto-record.js replay-players.js source-video-sync.js playback-layout.js mosaic-video.js map-view.js gourd-receptacles.js bigmap.jpeg og-card.jpg sample.replay.json.gz CNAME logo.svg favicon.ico site.webmanifest oauth-client-metadata.json _site/
           cp icons/icon-192.png icons/icon-512.png icons/apple-touch-icon.png _site/icons/
           cp vendor/atproto-oauth.js _site/vendor/
           # Shared replays live at /<did>/<rkey>; Pages serves 404.html for those paths.

@@ -177,9 +177,10 @@ referenced by both Open Graph and Twitter large-image card metadata; app icons
 remain unchanged.
 
 For offline use, open the root `index.html` from a checkout. Keep
-`atproto-record.js`, `source-video-sync.js`, `mosaic-video.js`, `map-view.js`,
-`gourd-receptacles.js`, and `bigmap.jpeg` beside it. No build or package install
-is needed. Alternatively, serve the repository root with a static HTTP server and
+`atproto-record.js`, `source-video-sync.js`, `playback-layout.js`,
+`mosaic-video.js`, `map-view.js`, `gourd-receptacles.js`, and `bigmap.jpeg`
+beside it. No build or package install is needed.
+Alternatively, serve the repository root with a static HTTP server and
 open `/?replay=run1.replay.json.gz`.
 
 Sharing needs the viewer served over HTTP. For local development run
@@ -217,10 +218,16 @@ section.
 
 ### Player video
 
-Use the **Map** and **Mosaic** buttons over the main view to switch surfaces. The
-Mosaic view contains twelve canvases in a 4-column × 3-row grid. Click a tile, or a
-player marker on the map, to focus that player's canvas; click **Mosaic** to return
-to all twelve or **Map** to return to the replay map.
+The open **Playback layout** sidebar section has a Map button and P1–P12 buttons
+in a 4-column × 3-row player grid. Select any combination; the main pane arranges
+the chosen map and camera views into a responsive grid that maximizes their usable
+size. At least one view remains selected. Clicking a player marker on the map adds
+that player's camera to the current layout.
+
+Enter a name and choose **Save layout** to preserve the current combination in
+this browser. Saved layouts can be recalled in one click, replaced by saving the
+same name again, or deleted with their × button. Player slots are stored as
+P1–P12 positions so a layout can be reused with another canonically named replay.
 
 For normal playback, a shared replay's optional `video` AT-URI loads its
 `place.stream.video` record as the default mosaic through Streamplace's HLS

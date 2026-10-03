@@ -186,6 +186,13 @@ class MosaicVideo {
     }
   }
 
+  setVisibleIndices(indices) {
+    const visible = new Set(indices);
+    for (let index = 0; index < this.tiles.length; index++) {
+      this.tiles[index].button.hidden = !visible.has(index);
+    }
+  }
+
   sync(time, playing, rate, forceSeek = false) {
     this.targetTime = Number.isFinite(time) ? Math.max(0, time) : 0;
     this.shouldPlay = playing;

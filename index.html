@@ -39,6 +39,8 @@
   .replay-item a:hover, .replay-item a:focus-visible { background: #1c2330; outline: none; }
   .replay-item .when { display: block; font-size: 11px; color: #7d8ba0; }
   #canvaswrap { grid-column: 1; grid-row: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #172e3a; }
+  #playback-layout { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--layout-columns, 1), minmax(0, 1fr)); grid-template-rows: repeat(var(--layout-rows, 1), minmax(0, 1fr)); gap: 8px; padding: 12px; background: #090b0f; }
+  #map-panel { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 2px solid #313c52; border-radius: 4px; background: #172e3a; }
   #map { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 0 0; }
   #sidebar { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; overflow-y: auto; border-left: 1px solid #232a36; background: #151a23; display: flex; flex-direction: column; }
   #viewer-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; background: #151a23; }
@@ -100,11 +102,6 @@
   #map-tools { position: absolute; bottom: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 12px; pointer-events: none; }
   #map-tools button { pointer-events: auto; }
   #coordinates { background: #10131adb; padding: 5px 8px; font: 11px monospace; }
-  #surface-switcher { position: absolute; z-index: 3; top: 12px; right: 12px; display: flex; gap: 4px; padding: 4px; border: 1px solid #313c52; border-radius: 6px; background: #10131adb; }
-  #surface-switcher .btn[aria-pressed=true] { border-color: #56b4ff; color: #fff; }
-  #canvaswrap[data-view=map] #video-grid { display: none; }
-  #canvaswrap:not([data-view=map]) #map, #canvaswrap:not([data-view=map]) #map-tools { display: none; }
-  #canvaswrap:not([data-view=map]) { cursor: default; }
   #alignment p, #anchor-list { font-size: 11px; color: #aab8cc; }
   #alignment-status { color: #f2d18a !important; }
   #anchor-source { width: 100%; margin: 5px 0 8px; background: #232b3a; color: #dfe5ee; padding: 5px; }
@@ -133,21 +130,30 @@
   .editing-nicknames .player-nickname { display: flex; }
   .editing-nicknames #nickname-help, .editing-nicknames #nickname-status, #nickname-status.storage-error { display: block; }
   button:disabled { opacity: .45; cursor: default; }
+  #layout-section p { margin: 6px 0; color: #aab8cc; font-size: 11px; }
+  #layout-picker { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  #layout-picker .btn { min-width: 0; padding: 6px 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #layout-picker .btn[aria-pressed=true] { border-color: #56b4ff; background: #263b55; color: #fff; }
+  #layout-map { grid-column: 1 / -1; }
+  #layout-save-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-top: 10px; }
+  #layout-name { min-width: 0; width: 100%; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; font: inherit; }
+  #saved-layouts { display: grid; gap: 5px; margin-top: 8px; }
+  .saved-layout-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
+  .saved-layout-row .load-layout { overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  .saved-layout-row .remove-layout { padding-inline: 8px; }
+  #layout-status { min-height: 1.4em; }
   #video-section p { font-size: 11px; color: #aab8cc; margin: 6px 0; }
   #video-section h3 { margin: 14px 0 4px; font-size: 12px; color: #c9d6e8; }
   #video-picker, #source-video-picker { display: inline-block; margin: 2px 0 4px; }
   #mosaic-start-label { display: block; margin: 6px 0; color: #aab8cc; font-size: 11px; }
   #mosaic-start { width: 82px; margin: 0 3px; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; }
-  #video-grid { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px; background: #090b0f; }
+  #video-grid { display: contents; }
   .video-tile { position: relative; min-width: 0; min-height: 0; padding: 0; overflow: hidden; border: 2px solid #313c52; border-radius: 4px; background: #090b0f; color: #fff; cursor: pointer; }
   .video-tile:hover { border-color: #526675; }
   .video-tile:focus-visible { outline: 2px solid #56b4ff; outline-offset: 2px; }
   .video-tile.selected { border-color: #56b4ff; }
   .video-tile canvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #090b0f; }
   .video-tile span { position: absolute; left: 4px; right: 4px; bottom: 4px; overflow: hidden; padding: 2px 4px; background: #10131acc; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-  #canvaswrap[data-view=player] #video-grid { display: block; }
-  #canvaswrap[data-view=player] .video-tile { display: none; width: 100%; height: 100%; }
-  #canvaswrap[data-view=player] .video-tile.selected { display: block; }
   #source-player { width: 100%; margin: 4px 0; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; }
   #source-video { display: block; width: 100%; margin-top: 6px; aspect-ratio: 16 / 9; background: #090b0f; }
   #source-video-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
@@ -183,14 +189,14 @@
   </section>
 </div>
 
-<div id="canvaswrap" data-view="map">
-  <canvas id="map" aria-label="Replay map. Drag to pan and scroll to zoom."></canvas>
-  <div id="video-grid" aria-label="Player camera views"></div>
-  <div id="surface-switcher" role="group" aria-label="Main view">
-    <button class="btn" id="view-map" type="button" aria-pressed="true">Map</button>
-    <button class="btn" id="view-mosaic" type="button" aria-pressed="false">Mosaic</button>
+<div id="canvaswrap">
+  <div id="playback-layout" aria-label="Selected playback views">
+    <div id="map-panel">
+      <canvas id="map" aria-label="Replay map. Drag to pan and scroll to zoom."></canvas>
+      <div id="map-tools"><button class="btn" id="fit-map">Fit map</button><span id="coordinates">Drag to pan · scroll to zoom</span></div>
+    </div>
+    <div id="video-grid" aria-label="Player camera views"></div>
   </div>
-  <div id="map-tools"><button class="btn" id="fit-map">Fit map</button><span id="coordinates">Drag to pan · scroll to zoom</span></div>
 </div>
 
 <div id="sidebar">
@@ -207,6 +213,33 @@
     <p id="replay-description" hidden></p>
   </div>
   <div id="meta"></div>
+  <details class="sidebar-section" id="layout-section" open>
+    <summary>Playback layout</summary>
+    <div class="section-body">
+      <p>Select any combination of the map and player cameras.</p>
+      <div id="layout-picker" role="group" aria-label="Displayed views">
+        <button class="btn" id="layout-map" type="button" data-layout-key="map" aria-pressed="true">Map</button>
+        <button class="btn" type="button" data-layout-key="p1" aria-pressed="false" disabled>P1</button>
+        <button class="btn" type="button" data-layout-key="p2" aria-pressed="false" disabled>P2</button>
+        <button class="btn" type="button" data-layout-key="p3" aria-pressed="false" disabled>P3</button>
+        <button class="btn" type="button" data-layout-key="p4" aria-pressed="false" disabled>P4</button>
+        <button class="btn" type="button" data-layout-key="p5" aria-pressed="false" disabled>P5</button>
+        <button class="btn" type="button" data-layout-key="p6" aria-pressed="false" disabled>P6</button>
+        <button class="btn" type="button" data-layout-key="p7" aria-pressed="false" disabled>P7</button>
+        <button class="btn" type="button" data-layout-key="p8" aria-pressed="false" disabled>P8</button>
+        <button class="btn" type="button" data-layout-key="p9" aria-pressed="false" disabled>P9</button>
+        <button class="btn" type="button" data-layout-key="p10" aria-pressed="false" disabled>P10</button>
+        <button class="btn" type="button" data-layout-key="p11" aria-pressed="false" disabled>P11</button>
+        <button class="btn" type="button" data-layout-key="p12" aria-pressed="false" disabled>P12</button>
+      </div>
+      <form id="layout-save-form">
+        <input id="layout-name" type="text" maxlength="60" placeholder="Layout name" aria-label="Layout name" required>
+        <button class="btn" type="submit">Save layout</button>
+      </form>
+      <div id="saved-layouts" aria-label="Saved layouts"></div>
+      <p id="layout-status" role="status"></p>
+    </div>
+  </details>
   <details class="sidebar-section" id="share-section" open>
     <summary>Share</summary>
     <div class="section-body">
@@ -275,7 +308,7 @@
   <details class="sidebar-section" id="video-section">
     <summary>Player video</summary>
     <div class="section-body">
-      <p>Load a finished local 4×3 composite for the Mosaic view. Tiles map left-to-right, top-to-bottom by the numeric P-prefix in each player's name: P1 through P12.</p>
+      <p>Load a finished local 4×3 composite for the selectable player views. Tiles map left-to-right, top-to-bottom by the numeric P-prefix in each player's name: P1 through P12.</p>
       <label class="btn" id="video-picker">Choose mosaic video<input id="video-file" type="file" accept="video/*,.mkv" hidden></label>
       <label id="mosaic-start-label">Mosaic starts at replay <input id="mosaic-start" type="number" min="0" step="0.001" value="0.000"> seconds</label>
       <video id="mosaic-video" muted playsinline preload="metadata" hidden></video>
@@ -411,6 +444,7 @@
 <script src="replay-players.js"></script>
 <script src="atproto-record.js"></script>
 <script src="source-video-sync.js"></script>
+<script src="playback-layout.js"></script>
 <script src="mosaic-video.js"></script>
 <script src="map-view.js"></script>
 <script src="gourd-receptacles.js"></script>
@@ -461,6 +495,11 @@ try {
     }
   }
 } catch { /* Nicknames remain usable for this session when storage is unavailable. */ }
+let storedPlaybackLayouts = [];
+try {
+  storedPlaybackLayouts = JSON.parse(localStorage.getItem(PLAYBACK_LAYOUT_STORAGE));
+} catch { /* Saved layouts are optional; invalid or unavailable storage starts empty. */ }
+const playbackLayout = new PlaybackLayoutState(storedPlaybackLayouts);
 const playerIcon = markerArtwork("player-symbol");
 const gourdIcon = markerArtwork("gourd-symbol");
 // One LRU for artwork and labels: at most 256 entries / 16 MiB of RGBA pixels.
@@ -482,6 +521,11 @@ const account = new AtmosphereAccount();
 let selectedVideoPlayer = null;
 const canvasWrap = document.getElementById("canvaswrap");
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
+const playbackLayoutRoot = document.getElementById("playback-layout");
+const mapPanel = document.getElementById("map-panel");
+const layoutButtons = [...document.querySelectorAll("#layout-picker [data-layout-key]")];
+const layoutPlayerButtons = layoutButtons.filter(button => button.dataset.layoutKey !== "map");
+const layoutStatus = document.getElementById("layout-status");
 const mosaicStartInput = document.getElementById("mosaic-start");
 function setMosaicStartTime(seconds) {
   const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
@@ -518,11 +562,9 @@ const sourceVideoSync = new SourceVideoSync({
 document.getElementById("video-file").addEventListener("change", e => {
   if (!e.target.files[0]) return;
   mosaicVideo.load(e.target.files[0]);
-  setSurfaceView("mosaic");
 });
-document.getElementById("view-map").addEventListener("click", () => setSurfaceView("map"));
-document.getElementById("view-mosaic").addEventListener("click", () => setSurfaceView("mosaic"));
 const mapView = new MapView(canvas, render, () => setPlaying(false), playerColor, playerLabel, selectPlayerAt);
+initializePlaybackLayoutControls();
 trailSelect.value = trailMode;
 alignmentPanel.addEventListener("toggle", () => {
   if (alignmentPanel.open && replay) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
@@ -573,17 +615,132 @@ function refreshPlayerLabels() {
   renderEvents();
   mosaicVideo.setPlayers(ids, playerLabel);
   sourceVideoSync.refreshPlayers(ids, playerLabel);
+  updatePlaybackLayoutPlayers(ids);
   if (alignmentPanel.open && replay) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
   render();
 }
 
-function setSurfaceView(view) {
-  if (view === "player" && selectedVideoPlayer === null) view = "mosaic";
-  canvasWrap.dataset.view = view;
-  document.getElementById("view-map").setAttribute("aria-pressed", String(view === "map"));
-  document.getElementById("view-mosaic").setAttribute("aria-pressed", String(view !== "map"));
-  if (view === "map") render();
-  else mosaicVideo.draw();
+function persistPlaybackLayouts() {
+  try {
+    localStorage.setItem(PLAYBACK_LAYOUT_STORAGE, JSON.stringify(playbackLayout.savedLayouts));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function playbackSelectionLabel(selection = playbackLayout.selection) {
+  return selection.map(key => {
+    if (key === "map") return "Map";
+    const index = Number(key.slice(1)) - 1;
+    return layoutPlayerButtons[index]?.textContent || key.toUpperCase();
+  }).join(" + ");
+}
+
+function updatePlaybackGrid() {
+  const items = [
+    ...(!mapPanel.hidden ? [mapPanel] : []),
+    ...mosaicVideo.tiles.filter(tile => !tile.button.hidden).map(tile => tile.button),
+  ];
+  for (const item of [mapPanel, ...mosaicVideo.tiles.map(tile => tile.button)]) {
+    item.style.gridRow = "";
+    item.style.gridColumn = "";
+  }
+  const shape = playbackGridShape(
+    items.length,
+    Math.max(0, canvasWrap.clientWidth - 24),
+    Math.max(0, canvasWrap.clientHeight - 24),
+  );
+  playbackLayoutRoot.style.setProperty("--layout-columns", shape.columns);
+  playbackLayoutRoot.style.setProperty("--layout-rows", shape.rows);
+  if (shape.leadRows > 1) items[0].style.gridRow = `span ${shape.leadRows}`;
+  else if (shape.trailingColumns > 1) items.at(-1).style.gridColumn = `span ${shape.trailingColumns}`;
+}
+
+function applyPlaybackLayout(message = "") {
+  const selected = new Set(playbackLayout.selection);
+  mapPanel.hidden = !selected.has("map");
+  mosaicVideo.setVisibleIndices(
+    Array.from({ length: playbackLayout.playerCount }, (_, index) => index)
+      .filter(index => selected.has(playerLayoutKey(index))),
+  );
+  for (const button of layoutButtons) {
+    button.setAttribute("aria-pressed", String(selected.has(button.dataset.layoutKey)));
+  }
+  updatePlaybackGrid();
+  layoutStatus.textContent = message || `${playbackSelectionLabel()} selected.`;
+  if (!mapPanel.hidden) render();
+  mosaicVideo.draw();
+}
+
+function updatePlaybackLayoutPlayers(ids) {
+  playbackLayout.setPlayerCount(ids.length);
+  for (let index = 0; index < layoutPlayerButtons.length; index++) {
+    const button = layoutPlayerButtons[index], playerId = ids[index];
+    button.disabled = playerId === undefined;
+    button.textContent = `P${index + 1}`;
+    const label = playerId === undefined ? `Player ${index + 1} unavailable` : playerLabel(playerId);
+    button.title = label;
+    button.setAttribute("aria-label", playerId === undefined ? label : `Toggle ${label}`);
+  }
+  applyPlaybackLayout();
+}
+
+function renderSavedLayouts() {
+  const container = document.getElementById("saved-layouts");
+  container.replaceChildren(...playbackLayout.savedLayouts.map(layout => {
+    const row = document.createElement("div");
+    row.className = "saved-layout-row";
+    const load = document.createElement("button");
+    load.className = "btn load-layout";
+    load.type = "button";
+    load.textContent = layout.name;
+    load.title = `${layout.name}: ${playbackSelectionLabel(layout.selection)}`;
+    load.addEventListener("click", () => {
+      playbackLayout.recall(layout.name);
+      applyPlaybackLayout(`Loaded “${layout.name}”.`);
+    });
+    const remove = document.createElement("button");
+    remove.className = "btn remove-layout";
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", `Delete ${layout.name}`);
+    remove.addEventListener("click", () => {
+      playbackLayout.remove(layout.name);
+      const persisted = persistPlaybackLayouts();
+      renderSavedLayouts();
+      layoutStatus.textContent = persisted
+        ? `Deleted “${layout.name}”.`
+        : `Deleted “${layout.name}” for this session; browser storage is unavailable.`;
+    });
+    row.append(load, remove);
+    return row;
+  }));
+}
+
+function initializePlaybackLayoutControls() {
+  for (const button of layoutButtons) {
+    button.addEventListener("click", () => {
+      if (!playbackLayout.toggle(button.dataset.layoutKey)) {
+        layoutStatus.textContent = "Keep at least one view selected.";
+        return;
+      }
+      applyPlaybackLayout();
+    });
+  }
+  document.getElementById("layout-save-form").addEventListener("submit", event => {
+    event.preventDefault();
+    const input = document.getElementById("layout-name");
+    const saved = playbackLayout.save(input.value);
+    input.value = "";
+    const persisted = persistPlaybackLayouts();
+    renderSavedLayouts();
+    layoutStatus.textContent = persisted
+      ? `Saved “${saved.name}”.`
+      : `Saved “${saved.name}” for this session; browser storage is unavailable.`;
+  });
+  renderSavedLayouts();
+  applyPlaybackLayout();
 }
 
 function selectVideoPlayer(netId, focus = true, updateSource = true) {
@@ -591,7 +748,8 @@ function selectVideoPlayer(netId, focus = true, updateSource = true) {
   mosaicVideo.selectPlayer(netId);
   if (updateSource) sourceVideoSync.selectPlayer(netId);
   document.getElementById("video-section").open = true;
-  if (focus) setSurfaceView("player");
+  const index = mosaicVideo.playerIds.indexOf(netId);
+  if (focus && playbackLayout.addPlayer(index)) applyPlaybackLayout();
   render();
 }
 
@@ -631,6 +789,7 @@ function preparePlayers() {
   const ids = orderedPlayerIds();
   mosaicVideo.setPlayers(ids, playerLabel);
   sourceVideoSync.setPlayers(ids, playerLabel, findBigTeleportTime(frames), frames.at(-1).time);
+  updatePlaybackLayoutPlayers(ids);
   const used = new Set();
   // Reserve saved choices first so a newly joining player cannot steal an existing color.
   for (const id of ids) {
@@ -810,6 +969,7 @@ async function parseBuffer(buf, name, sharedReplay = null) {
   if (!sharedReplay && location.pathname !== "/") history.pushState(null, "", "/");
   selectedVideoPlayer = null;
   mosaicVideo.selectIndex(-1);
+  playbackLayout.setSelection(["map"]);
   resetMarkerSprites();
   frames = replay.frames;
   events = replay.events || [];
@@ -1397,6 +1557,7 @@ function drawReceptacles(occupants) {
 }
 
 function render() {
+  if (mapPanel.hidden) return;
   if (mapView.deferRender()) return;
   size();
   mapView.draw(ctx, frameIdx, trailMode);
@@ -1563,7 +1724,10 @@ function renderEvents() {
   }
 }
 
-new ResizeObserver(render).observe(document.getElementById("canvaswrap"));
+new ResizeObserver(() => {
+  updatePlaybackGrid();
+  render();
+}).observe(canvasWrap);
 render();
 </script>
 </body>
