@@ -23,6 +23,11 @@
           },
           "title": { "type": "string", "maxLength": 1000, "maxGraphemes": 100 },
           "description": { "type": "string", "maxLength": 10000, "maxGraphemes": 1000 },
+          "video": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "Optional place.stream.video record used as the default 4×3 mosaic."
+          },
           "recordedAt": {
             "type": "string",
             "format": "datetime",

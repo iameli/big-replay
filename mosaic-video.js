@@ -1,5 +1,12 @@
 "use strict";
 
+const STREAMPLACE_PLAYLIST_ENDPOINT = "https://stream.place/xrpc/place.stream.playback.getVideoPlaylist";
+const HLS_MODULE_URL = "https://cdn.jsdelivr.net/npm/hls.js@1.6.15/+esm";
+
+function streamplacePlaylistUrl(uri) {
+  return `${STREAMPLACE_PLAYLIST_ENDPOINT}?uri=${encodeURIComponent(uri)}`;
+}
+
 class MosaicVideo {
   static COLUMNS = 4;
   static ROWS = 3;
@@ -18,6 +25,9 @@ class MosaicVideo {
     this.targetTime = 0;
     this.shouldPlay = false;
     this.rate = 1;
+    this.sourceKind = null;
+    this.hls = null;
+    this.loadToken = 0;
     this.frameCallback = null;
 
     for (let index = 0; index < MosaicVideo.TILE_COUNT; index++) {
@@ -46,20 +56,74 @@ class MosaicVideo {
     video.addEventListener("seeked", () => this.draw());
     video.addEventListener("error", () => {
       this.ready = false;
-      this.status.textContent = "Could not read that video. Use a browser-supported MP4/WebM mosaic.";
+      this.status.textContent = this.sourceKind === "streamplace"
+        ? "Could not play the Streamplace video. Choose a local mosaic to override it."
+        : "Could not read that video. Use a browser-supported MP4/WebM mosaic.";
     });
   }
 
   load(file) {
-    this.cancelFrameLoop();
-    this.ready = false;
-    this.video.pause();
-    this.video.removeAttribute("src");
-    this.video.load();
-    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+    this.clearMedia();
+    this.sourceKind = "local";
+    this.video.removeAttribute("crossorigin");
     this.objectUrl = URL.createObjectURL(file);
     this.status.textContent = `Loading ${file.name}…`;
     this.video.src = this.objectUrl;
+  }
+
+  async loadStreamplace(uri) {
+    if (this.sourceKind === "local") return;
+    this.clearMedia();
+    this.sourceKind = "streamplace";
+    const token = this.loadToken;
+    const playlist = streamplacePlaylistUrl(uri);
+    this.video.crossOrigin = "anonymous";
+    this.status.textContent = "Loading default mosaic from Streamplace…";
+
+    if (this.video.canPlayType("application/vnd.apple.mpegurl")) {
+      this.video.src = playlist;
+      return;
+    }
+
+    try {
+      const module = await import(HLS_MODULE_URL);
+      if (token !== this.loadToken) return;
+      const Hls = module.default;
+      if (!Hls.isSupported()) throw new Error("HLS playback is not supported in this browser");
+      const hls = new Hls();
+      this.hls = hls;
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (this.hls !== hls || !data.fatal) return;
+        this.ready = false;
+        this.status.textContent = "Could not play the Streamplace video. Choose a local mosaic to override it.";
+        hls.destroy();
+        if (this.hls === hls) this.hls = null;
+      });
+      hls.loadSource(playlist);
+      hls.attachMedia(this.video);
+    } catch {
+      if (token !== this.loadToken) return;
+      this.status.textContent = "Could not start Streamplace playback. Choose a local mosaic to override it.";
+    }
+  }
+
+  reset() {
+    this.clearMedia();
+    this.sourceKind = null;
+    this.status.textContent = "No mosaic loaded. Video stays on this device.";
+  }
+
+  clearMedia() {
+    this.loadToken++;
+    this.cancelFrameLoop();
+    this.ready = false;
+    this.video.pause();
+    if (this.hls) this.hls.destroy();
+    this.hls = null;
+    this.video.removeAttribute("src");
+    this.video.load();
+    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+    this.objectUrl = null;
   }
 
   loadedMetadata() {
@@ -77,7 +141,8 @@ class MosaicVideo {
       canvas.height = tileHeight;
     }
     this.ready = true;
-    this.status.textContent = `${width}×${height} mosaic · 12 × ${tileWidth}×${tileHeight} views · ${this.formatDuration(this.video.duration)}`;
+    const source = this.sourceKind === "streamplace" ? "Streamplace mosaic" : "mosaic";
+    this.status.textContent = `${width}×${height} ${source} · 12 × ${tileWidth}×${tileHeight} views · ${this.formatDuration(this.video.duration)}`;
     this.sync(this.targetTime, this.shouldPlay, this.rate, true);
     this.startFrameLoop();
   }

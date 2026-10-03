@@ -222,14 +222,24 @@ Mosaic view contains twelve canvases in a 4-column × 3-row grid. Click a tile, 
 player marker on the map, to focus that player's canvas; click **Mosaic** to return
 to all twelve or **Map** to return to the replay map.
 
-For normal playback, expand **Player video** and choose a finished local 4×3
-composite. The browser reads it directly through a local object URL; it is not
-uploaded or copied into browser storage. Source dimensions must divide evenly by
-four columns and three rows. MP4/H.264 is the most broadly supported input in
-Chromium. Tiles map left-to-right, top-to-bottom to players in ascending network-ID
-order.
+For normal playback, a shared replay's optional `video` AT-URI loads its
+`place.stream.video` record as the default mosaic through Streamplace's HLS
+playback endpoint. Chromium playback loads the pinned hls.js module from jsDelivr.
+Choosing a finished local 4×3 composite under **Player video** replaces that
+default for the current page. Local files are read directly through object URLs;
+they are not uploaded or copied into browser storage. Source dimensions must
+divide evenly by four columns and three rows. MP4/H.264 is the most broadly
+supported local input in Chromium. Player names beginning with `P1` through `P12`
+define the canonical tile order, parsed numerically so `P9` precedes `P11`. Tiles
+run left-to-right, top-to-bottom:
 
-To establish rough synchronization before building the composite:
+```text
+P1  P2  P3  P4
+P5  P6  P7  P8
+P9  P10 P11 P12
+```
+
+To synchronize and build a composite:
 
 1. Under **Sync individual recordings**, select a player and choose that player's
    downloaded recording.
@@ -237,13 +247,16 @@ To establish rough synchronization before building the composite:
    Big Teleport at the end.
 3. Click **Mark current time as Big Teleport**. The viewer matches that source time
    to the replay's final recorded timestamp and reports the resulting source offset.
-4. Repeat for other players. Use the assignment list to reopen any loaded source.
+4. Repeat for all twelve players. Use the assignment list to reopen any loaded
+   source.
+5. Click **Generate FFmpeg command**, copy it, and run it in PowerShell from the
+   directory containing the twelve source files. The generated H.264 MP4 is
+   `big-replay-4x3-synced.mp4`; FFmpeg refuses to overwrite an existing file.
 
-After a source is marked, replay scrubbing, play/pause, and 1×/2×/4×/8× speed also
-control the selected individual recording using that offset. The automatic anchor is
-only a rough heuristic: it assumes the replay's final sample represents the same Big
-Teleport frame selected in the recording. Files and marks remain in memory for the
-current page only.
+Command generation requires twelve unique player names whose first words are
+`P1` through `P12`. It pads late-starting recordings with black, trims recordings
+that begin before replay time zero, preserves each video's aspect ratio, and holds
+its last frame if it finishes before the replay.
 
 For a finished composite, video time zero corresponds to replay time zero. Scrubbing
 seeks the composite to the selected frame timestamp. If a test clip ends before the
@@ -259,20 +272,28 @@ dropdown and marker legend.
 
 Sign in under **Share** with an Atmosphere account (such as Bluesky) to publish a
 replay you have opened. Sign-in happens in a popup, so the open replay stays put.
-**Share this replay…** asks for a title and optional description, then uploads the
-replay file as a blob to your PDS and creates a `com.iameli.bigWalk.replay` record
-(see `lexicons/`). Shared replays are public: anyone with the link can watch them,
-including every player's recorded Steam name. Many PDSes limit blobs to 50 MB.
+**Share this replay…** asks for a title, optional description, and optional
+`at://<did>/place.stream.video/<rkey>` reference. It then uploads the replay file
+as a blob to your PDS and creates a `com.iameli.bigWalk.replay` record (see
+`lexicons/`). When the video reference is present, viewers use it as the default
+mosaic but can still choose a local replacement. Shared replays are public: anyone
+with the link can watch them, including every player's recorded Steam name. Many
+PDSes limit blobs to 50 MB.
 
 Links look like `https://big-replay.iame.li/<did>/<rkey>`. A handle also works in
-place of the DID. A full AT-URI after the domain also works and redirects to the
-canonical link, e.g. `https://big-replay.iame.li/at://<did>/com.iameli.bigWalk.replay/<rkey>`
-(an account's AT-URI opens its replay list); dropping an AT-URI onto the file drop
-area does the same. Also, `https://big-replay.iame.li/<did-or-handle>` lists that
+place of the DID. Static servers that cannot route those paths can put the same
+route after `#`, for example
+`http://127.0.0.1:8080/#<did-or-handle>/<rkey>`. Hash routes also accept an account
+without a record key and full replay AT-URIs.
+
+A full AT-URI after the domain works and redirects to the canonical path, e.g.
+`https://big-replay.iame.li/at://<did>/com.iameli.bigWalk.replay/<rkey>` (an
+account's AT-URI opens its replay list); dropping an AT-URI onto the file drop area
+does the same. Also, `https://big-replay.iame.li/<did-or-handle>` lists that
 account's shared replays. Signed in, the home page lists your own. A first path
 segment containing `:` is a DID and one containing `.` is a handle, so any other
-top-level path stays available for the app. Loading a shared replay needs no
-sign-in: the viewer resolves the account's PDS and fetches the record and blob.
+top-level path stays available for the app. Loading a shared replay needs no sign-in:
+the viewer resolves the account's PDS and fetches the record and blob.
 
 On your own shared replay, **Edit nicknames** saves to the published record, so
 everyone sees them; the recorded Steam names are kept alongside. Viewing someone

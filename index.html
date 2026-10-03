@@ -392,6 +392,7 @@
   <form id="share-form">
     <label>Title<input id="share-title-input" type="text" maxlength="100" required></label>
     <label>Description <span>(optional)</span><textarea id="share-description" maxlength="1000"></textarea></label>
+    <label>Streamplace video <span>(optional)</span><input id="share-video" type="text" maxlength="2048" placeholder="at://did:plc:…/place.stream.video/…" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
     <p id="share-summary"></p>
     <p>Publishing uploads the whole replay file to your account. Anyone with the link can watch it, including every player's recorded Steam name. After publishing, you can set nicknames under <b>Player names &amp; colors</b>.</p>
     <p id="share-form-status" role="status"></p>
@@ -867,6 +868,8 @@ function setShared(value) {
   const description = document.getElementById("replay-description");
   description.textContent = shared.record.description || "";
   description.hidden = !shared.record.description;
+  const videoUri = streamplaceVideoUri(shared.record.video);
+  if (videoUri) mosaicVideo.loadStreamplace(videoUri);
 }
 
 function renderSharing() {
@@ -957,6 +960,7 @@ function openShareDialog() {
   document.getElementById("share-title-input").value =
     `Big Walk · ${count} player${count === 1 ? "" : "s"} · ${fmt(replayDurationMs() / 1000)}`;
   document.getElementById("share-description").value = "";
+  document.getElementById("share-video").value = "";
   const size = replaySource.gzipped ? megabytes(replaySource.buf.byteLength) : "compressed on upload";
   document.getElementById("share-summary").textContent =
     `File: ${size}. Recorded names: ${players.length ? players.join(", ") : "none"}.`;
@@ -971,6 +975,10 @@ async function publishReplay(event) {
   const publish = document.getElementById("share-publish");
   publish.disabled = true;
   try {
+    const video = document.getElementById("share-video").value.trim();
+    if (video && !streamplaceVideoUri(video)) {
+      throw new Error("Streamplace video must look like at://did:…/place.stream.video/record-key.");
+    }
     const bytes = replaySource.gzipped ? replaySource.buf : await gzipBytes(replaySource.buf);
     setStatus(shareFormStatus, `Uploading ${megabytes(bytes.byteLength)}…`);
     const blob = await account.uploadBlob(bytes, "application/gzip");
@@ -980,6 +988,7 @@ async function publishReplay(event) {
       blob,
       title: document.getElementById("share-title-input").value.trim(),
       description: document.getElementById("share-description").value.trim(),
+      video,
       header: replay.header,
       players,
       stats: replayStats(),

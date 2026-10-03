@@ -5,7 +5,7 @@ const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
 const atproto = runInNewContext(
   readFileSync(join(__dirname, '../atproto.js'), 'utf8') +
-  '\n({ parseRoute, replayPath, buildReplayRecord, recordNicknames, recordPlayerCount, withNickname, rkeyFromUri, REPLAY_COLLECTION })',
+  '\n({ parseRoute, parseHashRoute, replayPath, buildReplayRecord, streamplaceVideoUri, recordNicknames, recordPlayerCount, withNickname, rkeyFromUri, REPLAY_COLLECTION })',
   { EventTarget, URLSearchParams });
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -29,10 +29,23 @@ test('replay paths round-trip through the router', () => {
   assert.equal(atproto.rkeyFromUri(`at://did:plc:abc123/${atproto.REPLAY_COLLECTION}/3lxyz`), '3lxyz');
 });
 
+test('hash routes support static index.html replay and account links', () => {
+  const did = 'did:plc:2zmxikig2sj7gqaezl5gntae';
+  assert.deepEqual(plain(atproto.parseHashRoute(`#${did}/3mwlzuf4ihz2e`)),
+    { kind: 'replay', actor: did, rkey: '3mwlzuf4ihz2e' });
+  assert.deepEqual(plain(atproto.parseHashRoute('#iameli.com')), { kind: 'actor', actor: 'iameli.com' });
+  assert.deepEqual(plain(atproto.parseHashRoute(
+    `#at://${did}/com.iameli.bigWalk.replay/3mwlzuf4ihz2e`)),
+    { kind: 'replay', actor: did, rkey: '3mwlzuf4ihz2e' });
+  for (const hash of ['', '#', '#settings', '#at://bsky.app/app.bsky.feed.post/3mw'])
+    assert.equal(atproto.parseHashRoute(hash), null, hash);
+});
+
 test('records hold integer durations, normalized datetimes, and players without empty fields', () => {
   const blob = { $type: 'blob', ref: { $link: 'bafk' }, mimeType: 'application/gzip', size: 3 };
   const record = plain(atproto.buildReplayRecord({
     blob, title: 'WR', description: '', durationMs: 4256803.69,
+    video: ' at://did:plc:video123/place.stream.video/3mxyz ',
     header: { recordedAt: '2026-09-27T22:02:27.3621299Z', gameVersion: '1.5.1 2608271531' },
     players: [{ netId: 579, name: 'Rando' }, { netId: 0, name: '' }],
     stats: { maxPlayers: 12, gourdsPlaced: 45, towersCompleted: 9, deaths: 3 },
@@ -41,10 +54,28 @@ test('records hold integer durations, normalized datetimes, and players without 
   assert.deepEqual(record, {
     $type: 'com.iameli.bigWalk.replay', replay: blob, format: 'com.iameli.bigWalk.replay#jsonGzV1',
     createdAt: '2026-09-28T00:00:00.000Z', title: 'WR', recordedAt: '2026-09-27T22:02:27.362Z',
+    video: 'at://did:plc:video123/place.stream.video/3mxyz',
     durationMs: 4256804, gameVersion: '1.5.1 2608271531',
     players: [{ netId: 579, name: 'Rando' }, { netId: 0 }],
     stats: { maxPlayers: 12, gourdsPlaced: 45, towersCompleted: 9, deaths: 3 },
   });
+});
+
+test('Streamplace video references reject other collections and malformed AT URIs', () => {
+  assert.equal(atproto.streamplaceVideoUri('at://did:plc:abc/place.stream.video/3mxyz'),
+    'at://did:plc:abc/place.stream.video/3mxyz');
+  for (const value of [
+    'https://stream.place/video/3mxyz',
+    'at://did:plc:abc/app.bsky.feed.post/3mxyz',
+    'at://alice.example/place.stream.video/3mxyz',
+    'at://did:plc:abc/place.stream.video/../extra',
+  ]) assert.equal(atproto.streamplaceVideoUri(value), null, value);
+  assert.throws(() => atproto.buildReplayRecord({
+    blob: { $type: 'blob' },
+    video: 'at://did:plc:abc/app.bsky.feed.post/3mxyz',
+    players: [],
+    createdAt: '2026-09-28T00:00:00.000Z',
+  }), /place\\.stream\\.video/);
 });
 
 test('nicknames are set and cleared per netId without touching recorded names', () => {

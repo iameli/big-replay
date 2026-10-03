@@ -4,6 +4,7 @@
 // and the OAuth-backed account used to publish replays. Reads need no sign-in.
 const REPLAY_COLLECTION = "com.iameli.bigWalk.replay";
 const REPLAY_FORMAT_JSON_GZ_V1 = "com.iameli.bigWalk.replay#jsonGzV1";
+const STREAMPLACE_VIDEO_COLLECTION = "place.stream.video";
 const OAUTH_SCOPE = `atproto repo:${REPLAY_COLLECTION} blob:*/*`;
 const PLC_DIRECTORY = "https://plc.directory";
 const HANDLE_RESOLVER = "https://public.api.bsky.app";
@@ -81,7 +82,7 @@ function rkeyFromUri(uri) {
 // ---------- records ----------
 // atproto records cannot hold floats: durations are integer milliseconds, and
 // all positions stay inside the replay blob.
-function buildReplayRecord({ blob, title, description, header, players, stats, durationMs, createdAt }) {
+function buildReplayRecord({ blob, title, description, video, header, players, stats, durationMs, createdAt }) {
   const record = {
     $type: REPLAY_COLLECTION,
     replay: blob,
@@ -90,6 +91,11 @@ function buildReplayRecord({ blob, title, description, header, players, stats, d
   };
   if (title) record.title = title;
   if (description) record.description = description;
+  if (video) {
+    const uri = streamplaceVideoUri(video);
+    if (!uri) throw new Error("Streamplace video must be an at:// DID URI for a place.stream.video record.");
+    record.video = uri;
+  }
   const recordedAt = normalizeDatetime(header?.recordedAt);
   if (recordedAt) record.recordedAt = recordedAt;
   if (Number.isFinite(durationMs)) record.durationMs = Math.max(0, Math.round(durationMs));
@@ -102,6 +108,13 @@ function buildReplayRecord({ blob, title, description, header, players, stats, d
   });
   if (stats) record.stats = stats;
   return record;
+}
+
+function streamplaceVideoUri(value) {
+  if (typeof value !== "string") return null;
+  const match = /^at:\/\/([^/]+)\/place\.stream\.video\/([^/?#]+)$/.exec(value.trim());
+  if (!match || !DID_RE.test(match[1]) || !isRecordKey(match[2])) return null;
+  return `at://${match[1]}/${STREAMPLACE_VIDEO_COLLECTION}/${match[2]}`;
 }
 
 function normalizeDatetime(value) {
