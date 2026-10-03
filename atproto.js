@@ -32,6 +32,16 @@ function parseRoute(pathname) {
   return { kind: "replay", actor, rkey };
 }
 
+// Hash routing keeps static index.html deployments independent of server rewrites.
+// Return only app routes; unrelated anchors remain available to the document.
+function parseHashRoute(hash) {
+  if (typeof hash !== "string" || !hash.startsWith("#") || hash.length === 1) return null;
+  const route = parseRoute(`/${hash.slice(1)}`);
+  if (route.kind === "actor") return { kind: "actor", actor: route.actor };
+  if (route.kind === "replay") return { kind: "replay", actor: route.actor, rkey: route.rkey };
+  return null;
+}
+
 function parseAtUriPath(pathname) {
   let text = pathname.replace(/^\/+/, "");
   try { text = decodeURIComponent(text); } catch { return null; }

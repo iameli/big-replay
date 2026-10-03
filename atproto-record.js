@@ -13,7 +13,7 @@ class AtprotoRecordRoute {
 
   async loadHash() {
     const raw = location.hash.slice(1);
-    if (!raw.startsWith("at://")) {
+    if (!raw.startsWith("at://") || parseHashRoute(location.hash)) {
       this.request?.abort();
       this.request = null;
       this.section.hidden = true;

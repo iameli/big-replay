@@ -827,7 +827,7 @@ const MAX_TYPICAL_BLOB_BYTES = 50 * 1024 * 1024;
 const dropEl = document.getElementById("drop"), dropStatus = document.getElementById("drop-status");
 const shareStatus = document.getElementById("share-status");
 const shareDialog = document.getElementById("share-dialog"), shareFormStatus = document.getElementById("share-form-status");
-const route = parseRoute(location.pathname);
+const route = parseHashRoute(location.hash) || parseRoute(location.pathname);
 let recordSave = Promise.resolve();
 
 function megabytes(bytes) {
@@ -1103,6 +1103,9 @@ document.getElementById("copy-link").addEventListener("click", async () => {
   }
 });
 addEventListener("popstate", () => location.reload());
+addEventListener("hashchange", () => {
+  if (parseHashRoute(location.hash)) location.reload();
+});
 account.addEventListener("change", () => {
   renderSharing();
   if (replay) {
