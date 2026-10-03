@@ -29,22 +29,36 @@ function buildFfmpegMosaicCommand(sources, replayEndTime) {
   const command = ["ffmpeg", "-hide_banner", "-n"];
   for (const source of sources) command.push("-i", quotePowerShell(source.fileName));
 
-  const filters = sources.map((source, index) => {
+  const filters = [];
+  sources.forEach((source, index) => {
     const sourceStart = ffmpegSeconds(startTime + source.offset);
-    return `[${index}:v]trim=start=${sourceStart},setpts=PTS-STARTPTS,fps=30,`
-      + "scale=640:360:force_original_aspect_ratio=decrease,"
-      + "pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p,"
-      + `tpad=stop_mode=clone:stop_duration=${duration}:color=black,`
-      + `trim=duration=${duration},setpts=PTS-STARTPTS[v${index}]`;
+    filters.push(
+      `[${index}:v]trim=start=${sourceStart},setpts=PTS-STARTPTS,fps=30,`
+        + "scale=640:360:force_original_aspect_ratio=decrease,"
+        + "pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p,"
+        + `tpad=stop_mode=clone:stop_duration=${duration}:color=black,`
+        + `trim=duration=${duration},setpts=PTS-STARTPTS[v${index}]`,
+      `[${index}:a:0]atrim=start=${sourceStart},asetpts=PTS-STARTPTS,`
+        + `apad=pad_dur=${duration},atrim=duration=${duration}[a${index}]`,
+    );
   });
   const labels = sources.map((_, index) => `[v${index}]`).join("");
   const layout = "0_0|640_0|1280_0|1920_0|0_360|640_360|1280_360|1920_360|0_720|640_720|1280_720|1920_720";
   filters.push(`${labels}xstack=inputs=12:layout=${layout}:fill=black:shortest=1[out]`);
+  command.push("-filter_complex", quotePowerShell(filters.join(";")), "-map", quotePowerShell("[out]"));
+  for (let index = 0; index < sources.length; index++) {
+    command.push("-map", quotePowerShell(`[a${index}]`));
+  }
   command.push(
-    "-filter_complex", quotePowerShell(filters.join(";")),
-    "-map", quotePowerShell("[out]"),
-    "-an", "-t", duration,
+    "-t", duration,
     "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+    "-c:a", "aac", "-b:a", "160k",
+  );
+  sources.forEach((source, index) => {
+    command.push(`-metadata:s:a:${index}`, quotePowerShell(`title=${source.title || source.fileName}`));
+    command.push(`-disposition:a:${index}`, index === 0 ? "default" : "0");
+  });
+  command.push(
     "-pix_fmt", "yuv420p", "-movflags", "+faststart",
     quotePowerShell("big-replay-4x3-synced.mp4"),
   );
@@ -312,7 +326,7 @@ class SourceVideoSync {
     this.commandOutput.hidden = false;
     this.copyButton.disabled = false;
     this.onMosaicStartTime(startTime);
-    this.commandStatus.textContent = `Generated in P1–P12 tile order · starts at replay ${this.formatTime(startTime)}. Run it in PowerShell from the recordings folder.`;
+    this.commandStatus.textContent = `Generated in P1–P12 tile order with twelve AAC audio tracks · starts at replay ${this.formatTime(startTime)}. Run it in PowerShell from the recordings folder.`;
   }
 
   commandSources() {
@@ -320,6 +334,7 @@ class SourceVideoSync {
       const source = this.sources.get(playerId);
       return {
         fileName: source.file.name,
+        title: this.labels.get(playerId),
         offset: source.teleportTime - this.replayTeleportTime,
       };
     });

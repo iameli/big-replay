@@ -251,16 +251,19 @@ To synchronize and build a composite:
 4. Repeat for all twelve players. Use the assignment list to reopen any loaded
    source.
 5. Click **Generate FFmpeg command**, copy it, and run it in PowerShell from the
-   directory containing the twelve source files. The generated H.264 MP4 is
-   `big-replay-4x3-synced.mp4`; FFmpeg refuses to overwrite an existing file. The
-   generator also fills **Mosaic starts at replay** with the timestamp represented
-   by video time zero.
+   directory containing the twelve source files. Each input must contain an audio
+   stream. The generated MP4 contains H.264 video and twelve separately selectable
+   160-kbit/s AAC tracks titled with their player labels; P1 is the default audio
+   track. Its filename is `big-replay-4x3-synced.mp4`, and FFmpeg refuses to
+   overwrite an existing file. The generator also fills **Mosaic starts at replay**
+   with the timestamp represented by video time zero.
 
 Command generation requires twelve unique player names whose first words are
 `P1` through `P12`. It starts the output at the first replay timestamp where every
-source has video, trims each input to that common point, preserves each video's
-aspect ratio, and holds its last frame if it finishes before the replay. This
-removes the long black pre-roll.
+source has video, trims each input's video and audio to that common point, pads
+short audio tracks with silence, preserves each video's aspect ratio, and holds
+its last frame if it finishes before the replay. This removes the long black
+pre-roll while keeping every player's audio aligned on its own output track.
 
 For a finished composite, **Mosaic starts at replay** maps video time zero back to
 the replay timeline. Scrubbing before that timestamp shows empty tiles; later
