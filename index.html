@@ -154,6 +154,8 @@
   .source-video-row.active { border-color: #526675; background: #1c2330; }
   .source-video-row .btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .source-video-row span { min-width: 0; overflow: hidden; color: #8fa3bd; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  #mosaic-command-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+  #ffmpeg-command { box-sizing: border-box; width: 100%; min-height: 96px; resize: vertical; border: 1px solid #526675; border-radius: 4px; padding: 7px; background: #090b0f; color: #dfe5ee; font: 10px/1.4 ui-monospace, monospace; }
   #at-record-section p { margin: 6px 0; color: #aab8cc; font-size: 11px; overflow-wrap: anywhere; }
   #at-record-uri { color: #dfe5ee; font-family: ui-monospace, monospace; }
   #at-record-value { max-height: 320px; margin: 8px 0 0; overflow: auto; padding: 8px; border-radius: 4px; background: #090b0f; color: #cfd9e8; font: 10px/1.4 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -271,7 +273,7 @@
   <details class="sidebar-section" id="video-section">
     <summary>Player video</summary>
     <div class="section-body">
-      <p>Load a finished local 4×3 composite for the Mosaic view. Tiles map left-to-right, top-to-bottom to players by ascending network ID.</p>
+      <p>Load a finished local 4×3 composite for the Mosaic view. Tiles map left-to-right, top-to-bottom by the numeric P-prefix in each player's name: P1 through P12.</p>
       <label class="btn" id="video-picker">Choose mosaic video<input id="video-file" type="file" accept="video/*,.mkv" hidden></label>
       <video id="mosaic-video" muted playsinline preload="metadata" hidden></video>
       <p id="video-status" role="status">No mosaic loaded. Video stays on this device.</p>
@@ -286,6 +288,14 @@
         <button class="btn" id="clear-teleport" type="button" disabled>Clear mark</button>
       </div>
       <div id="source-video-list" aria-label="Individual recording assignments"></div>
+      <h3>Build mosaic</h3>
+      <p>After all twelve recordings and Big Teleports are marked, generate a PowerShell FFmpeg command. Run it from the folder containing the source files.</p>
+      <div id="mosaic-command-actions">
+        <button class="btn" id="generate-ffmpeg" type="button" disabled>Generate FFmpeg command</button>
+        <button class="btn" id="copy-ffmpeg" type="button" disabled>Copy command</button>
+      </div>
+      <textarea id="ffmpeg-command" aria-label="Generated PowerShell FFmpeg command" readonly wrap="off" hidden></textarea>
+      <p id="ffmpeg-status" role="status">Load a replay before generating a mosaic command.</p>
     </div>
   </details>
   <details class="sidebar-section" id="player-settings" open>
@@ -485,6 +495,10 @@ const sourceVideoSync = new SourceVideoSync({
   markButton: document.getElementById("mark-teleport"),
   clearButton: document.getElementById("clear-teleport"),
   list: document.getElementById("source-video-list"),
+  generateButton: document.getElementById("generate-ffmpeg"),
+  copyButton: document.getElementById("copy-ffmpeg"),
+  commandOutput: document.getElementById("ffmpeg-command"),
+  commandStatus: document.getElementById("ffmpeg-status"),
   pauseReplay: () => setPlaying(false),
   selectPlayer: netId => selectVideoPlayer(netId, false, false),
 });
@@ -531,6 +545,10 @@ function playerLabel(netId) {
   return playerNickname(netId) || playerNames.get(netId) || `Player #${netId}`;
 }
 
+function orderedPlayerIds() {
+  return canonicalPlayerOrder(playerNames.keys(), playerLabel);
+}
+
 function nicknameStatusText() {
   if (nicknamesSaveToRecord()) return "Nicknames save to your shared replay, so everyone with the link sees them.";
   if (shared) return "The uploader's nicknames are shown unless you set your own here; yours stay in this browser.";
@@ -538,9 +556,10 @@ function nicknameStatusText() {
 }
 
 function refreshPlayerLabels() {
+  const ids = orderedPlayerIds();
   renderEvents();
-  mosaicVideo.refreshLabels(playerLabel);
-  sourceVideoSync.refreshLabels(playerLabel);
+  mosaicVideo.setPlayers(ids, playerLabel);
+  sourceVideoSync.refreshPlayers(ids, playerLabel);
   if (alignmentPanel.open && replay) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
   render();
 }
@@ -596,7 +615,7 @@ function preparePlayers() {
     playerNicknameKeys.set(id, JSON.stringify(name && counts.get(name) === 1
       ? ["name", name] : ["recording", nicknameRecordingScope, id]));
   }
-  const ids = [...playerNames.keys()].sort((a, b) => a - b);
+  const ids = orderedPlayerIds();
   mosaicVideo.setPlayers(ids, playerLabel);
   sourceVideoSync.setPlayers(ids, playerLabel, frames.at(-1).time);
   const used = new Set();
@@ -628,7 +647,8 @@ function renderPlayerSettings() {
   const editing = document.getElementById("player-settings").classList.contains("editing-nicknames");
   document.getElementById("edit-nicknames").disabled = !playerNames.size;
   container.replaceChildren();
-  for (const [id, index] of [...playerColorAssignments].sort((a, b) => a[0] - b[0])) {
+  for (const id of orderedPlayerIds()) {
+    const index = playerColorAssignments.get(id);
     const row = document.createElement("div");
     row.className = "player-color";
     const swatch = document.createElement("span");
@@ -770,6 +790,7 @@ async function parseBuffer(buf, name, sharedReplay = null) {
   playerAliases = normalizeReplayPlayers(parsed);
   replay = parsed;
   replaySource = { buf, gzipped };
+  mosaicVideo.reset();
   setShared(sharedReplay);
   // A local file replaces any shared replay, so leave its /<did>/<rkey> address.
   if (!sharedReplay && location.pathname !== "/") history.pushState(null, "", "/");

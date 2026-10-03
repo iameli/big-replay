@@ -3,11 +3,35 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
-const normalizeReplayPlayers = runInNewContext(
-  readFileSync(join(__dirname, '../replay-players.js'), 'utf8') + '\nnormalizeReplayPlayers');
+const { normalizeReplayPlayers, canonicalPlayerNumber, canonicalPlayerOrder } = runInNewContext(
+  readFileSync(join(__dirname, '../replay-players.js'), 'utf8')
+    + '\n({ normalizeReplayPlayers, canonicalPlayerNumber, canonicalPlayerOrder })');
 const plain = value => JSON.parse(JSON.stringify(value));
 const player = (netId, name, extra = {}) => ({ netId, name, x: 0, z: 0, ...extra });
 const ids = frame => frame.players.map(p => p.netId);
+
+test('P-prefixed player names use numeric canonical order', () => {
+  const labels = new Map([
+    [579, 'P12 - Rando'],
+    [580, 'P6 - Majus'],
+    [581, 'P9 - xCape'],
+    [582, 'P11 - Fookeach'],
+  ]);
+  assert.equal(canonicalPlayerNumber('P9 - xCape'), 9);
+  assert.equal(canonicalPlayerNumber('player 9'), null);
+  assert.deepEqual(
+    plain(canonicalPlayerOrder(labels.keys(), id => labels.get(id))),
+    [580, 581, 582, 579],
+  );
+});
+
+test('canonical player order keeps unnumbered and duplicate slots deterministic', () => {
+  const labels = new Map([[8, 'Rando'], [6, 'P2 - B'], [4, 'P2 - A'], [2, 'Majus']]);
+  assert.deepEqual(
+    plain(canonicalPlayerOrder(labels.keys(), id => labels.get(id))),
+    [4, 6, 2, 8],
+  );
+});
 
 test('netId 0 spawning placeholders and their join/leave events are dropped', () => {
   const replay = {

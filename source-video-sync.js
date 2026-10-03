@@ -1,7 +1,56 @@
 "use strict";
 
+function ffmpegSeconds(seconds) {
+  return Math.max(0, seconds).toFixed(3);
+}
+
+function quotePowerShell(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function buildFfmpegMosaicCommand(sources, replayEndTime) {
+  if (!Array.isArray(sources) || sources.length !== 12) {
+    throw new Error("A 4×3 mosaic requires exactly 12 ordered sources.");
+  }
+  if (!Number.isFinite(replayEndTime) || replayEndTime <= 0) {
+    throw new Error("Replay end time must be a positive number.");
+  }
+  if (sources.some(source => !source || !source.fileName || !Number.isFinite(source.offset))) {
+    throw new Error("Each mosaic source requires a filename and finite offset.");
+  }
+
+  const duration = ffmpegSeconds(replayEndTime);
+  const command = ["ffmpeg", "-hide_banner", "-n"];
+  for (const source of sources) command.push("-i", quotePowerShell(source.fileName));
+
+  const filters = sources.map((source, index) => {
+    const trim = source.offset > 0 ? `trim=start=${ffmpegSeconds(source.offset)},` : "";
+    const delay = ffmpegSeconds(Math.max(0, -source.offset));
+    return `[${index}:v]${trim}setpts=PTS-STARTPTS,fps=30,`
+      + "scale=640:360:force_original_aspect_ratio=decrease,"
+      + "pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p,"
+      + `tpad=start_mode=add:start_duration=${delay}:stop_mode=clone:stop_duration=${duration}:color=black,`
+      + `trim=duration=${duration},setpts=PTS-STARTPTS[v${index}]`;
+  });
+  const labels = sources.map((_, index) => `[v${index}]`).join("");
+  const layout = "0_0|640_0|1280_0|1920_0|0_360|640_360|1280_360|1920_360|0_720|640_720|1280_720|1920_720";
+  filters.push(`${labels}xstack=inputs=12:layout=${layout}:fill=black:shortest=1[out]`);
+  command.push(
+    "-filter_complex", quotePowerShell(filters.join(";")),
+    "-map", quotePowerShell("[out]"),
+    "-an", "-t", duration,
+    "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+    "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+    quotePowerShell("big-replay-4x3-synced.mp4"),
+  );
+  return command.join(" ");
+}
+
 class SourceVideoSync {
-  constructor({ video, playerSelect, fileInput, status, markButton, clearButton, list, pauseReplay, selectPlayer }) {
+  constructor({
+    video, playerSelect, fileInput, status, markButton, clearButton, list,
+    generateButton, copyButton, commandOutput, commandStatus, pauseReplay, selectPlayer,
+  }) {
     this.video = video;
     this.playerSelect = playerSelect;
     this.fileInput = fileInput;
@@ -9,6 +58,10 @@ class SourceVideoSync {
     this.markButton = markButton;
     this.clearButton = clearButton;
     this.list = list;
+    this.generateButton = generateButton;
+    this.copyButton = copyButton;
+    this.commandOutput = commandOutput;
+    this.commandStatus = commandStatus;
     this.pauseReplay = pauseReplay;
     this.onSelectPlayer = selectPlayer;
     this.playerIds = [];
@@ -33,6 +86,8 @@ class SourceVideoSync {
       this.markTeleport();
     });
     clearButton.addEventListener("click", () => this.clearTeleport());
+    generateButton.addEventListener("click", () => this.generateCommand());
+    copyButton.addEventListener("click", () => this.copyCommand());
     video.addEventListener("loadedmetadata", () => this.updateActiveStatus());
     video.addEventListener("error", () => {
       this.status.textContent = "Could not read this recording. Try a browser-supported MP4/WebM file.";
@@ -52,19 +107,32 @@ class SourceVideoSync {
     if (this.activePlayerId !== null) this.playerSelect.value = String(this.activePlayerId);
     this.showPlayer(this.activePlayerId);
     this.renderList();
+    this.invalidateCommand();
+  }
+
+  refreshPlayers(playerIds, labelPlayer) {
+    const selectedPlayer = this.activePlayerId;
+    this.playerIds = playerIds.slice(0, 12);
+    this.labels = new Map(this.playerIds.map(id => [id, labelPlayer(id)]));
+    this.playerSelect.replaceChildren(...this.playerIds.map(id => new Option(this.labels.get(id), String(id))));
+    this.playerSelect.disabled = !this.playerIds.length;
+    this.fileInput.disabled = !this.playerIds.length;
+    this.activePlayerId = this.playerIds.includes(selectedPlayer) ? selectedPlayer : (this.playerIds[0] ?? null);
+    if (this.activePlayerId !== null) this.playerSelect.value = String(this.activePlayerId);
+    this.renderList();
+    this.updateActiveStatus();
+    this.invalidateCommand();
   }
 
   refreshLabels(labelPlayer) {
-    this.labels = new Map(this.playerIds.map(id => [id, labelPlayer(id)]));
-    for (const option of this.playerSelect.options) option.textContent = this.labels.get(Number(option.value));
-    this.renderList();
-    this.updateActiveStatus();
+    this.refreshPlayers(this.playerIds, labelPlayer);
   }
 
   assign(playerId, file) {
     this.sources.set(playerId, { file, teleportTime: null });
     this.showPlayer(playerId);
     this.renderList();
+    this.invalidateCommand();
   }
 
   selectPlayer(playerId) {
@@ -104,6 +172,7 @@ class SourceVideoSync {
     source.teleportTime = this.video.currentTime;
     this.updateActiveStatus();
     this.renderList();
+    this.invalidateCommand();
   }
 
   clearTeleport() {
@@ -112,6 +181,7 @@ class SourceVideoSync {
     source.teleportTime = null;
     this.updateActiveStatus();
     this.renderList();
+    this.invalidateCommand();
   }
 
   sync(replayTime, playing, rate, forceSeek = false) {
@@ -173,6 +243,83 @@ class SourceVideoSync {
       row.append(open, detail);
       return row;
     }));
+  }
+
+  invalidateCommand() {
+    this.commandOutput.value = "";
+    this.commandOutput.hidden = true;
+    this.copyButton.disabled = true;
+    this.updateGeneratorStatus();
+  }
+
+  generatorState() {
+    if (!Number.isFinite(this.replayEndTime) || !this.playerIds.length) {
+      return { ready: false, message: "Load a replay before generating a mosaic command." };
+    }
+    if (this.playerIds.length !== 12) {
+      return { ready: false, message: `A 4×3 mosaic requires 12 players; this replay has ${this.playerIds.length}.` };
+    }
+    const canonical = this.playerIds.every((id, index) =>
+      canonicalPlayerNumber(this.labels.get(id)) === index + 1);
+    if (!canonical) {
+      return { ready: false, message: "Player names must begin with unique P1 through P12 labels." };
+    }
+    const assigned = this.playerIds.filter(id => this.sources.has(id)).length;
+    const marked = this.playerIds.filter(id => this.sources.get(id)?.teleportTime !== null
+      && this.sources.get(id)?.teleportTime !== undefined).length;
+    if (marked < 12) {
+      return {
+        ready: false,
+        message: `${assigned}/12 recordings assigned · ${marked}/12 Big Teleports marked.`,
+      };
+    }
+    return { ready: true, message: "Ready to generate a P1–P12 PowerShell command." };
+  }
+
+  updateGeneratorStatus() {
+    const state = this.generatorState();
+    this.generateButton.disabled = !state.ready;
+    this.commandStatus.textContent = state.message;
+  }
+
+  generateCommand() {
+    const state = this.generatorState();
+    if (!state.ready) {
+      this.updateGeneratorStatus();
+      return;
+    }
+    this.commandOutput.value = this.buildFfmpegCommand();
+    this.commandOutput.hidden = false;
+    this.copyButton.disabled = false;
+    this.commandStatus.textContent = "Generated in P1–P12 tile order. Run it in PowerShell from the recordings folder.";
+  }
+
+  buildFfmpegCommand() {
+    const sources = this.playerIds.map(playerId => {
+      const source = this.sources.get(playerId);
+      return {
+        fileName: source.file.name,
+        offset: source.teleportTime - this.replayEndTime,
+      };
+    });
+    return buildFfmpegMosaicCommand(sources, this.replayEndTime);
+  }
+
+  async copyCommand() {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(this.commandOutput.value);
+      } else {
+        this.commandOutput.hidden = false;
+        this.commandOutput.select();
+        if (!document.execCommand("copy")) throw new Error("Copy was not available");
+      }
+      this.commandStatus.textContent = "FFmpeg command copied.";
+    } catch {
+      this.commandOutput.focus();
+      this.commandOutput.select();
+      this.commandStatus.textContent = "Automatic copy was unavailable; the command is selected for manual copying.";
+    }
   }
 
   clearSources() {

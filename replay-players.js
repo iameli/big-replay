@@ -1,5 +1,22 @@
 "use strict";
 
+function canonicalPlayerNumber(label) {
+  const firstWord = String(label || "").trim().split(/\s+/, 1)[0];
+  const match = /^P(\d+)$/i.exec(firstWord);
+  return match ? Number(match[1]) : null;
+}
+
+function canonicalPlayerOrder(playerIds, labelPlayer) {
+  return [...playerIds].sort((left, right) => {
+    const leftNumber = canonicalPlayerNumber(labelPlayer(left));
+    const rightNumber = canonicalPlayerNumber(labelPlayer(right));
+    if (leftNumber !== null && rightNumber !== null) return leftNumber - rightNumber || left - right;
+    if (leftNumber !== null) return -1;
+    if (rightNumber !== null) return 1;
+    return left - right;
+  });
+}
+
 // Turns recorded netIds into viewer player identities, in place, before anything
 // keys on netId (colors, trails, nicknames, shared records).
 // - netId 0 is a spawning placeholder: Mirror never assigns it to a real player,
