@@ -19,6 +19,32 @@ function inSecretRoom(p) {
     p.z >= SECRET_ROOM.minZ && p.z <= SECRET_ROOM.maxZ;
 }
 
+const BIG_TELEPORT_CONSENSUS = 0.8;
+const BIG_TELEPORT_STABILITY_SECONDS = 1;
+
+function hasSecretRoomConsensus(frame) {
+  const located = (frame?.players || []).filter(player =>
+    Number.isFinite(player.x) && Number.isFinite(player.y) && Number.isFinite(player.z));
+  if (!located.length) return false;
+  const inside = located.filter(inSecretRoom).length;
+  return inside >= Math.ceil(located.length * BIG_TELEPORT_CONSENSUS);
+}
+
+// Networked player positions arrive across several samples. Anchor synchronization
+// at the first stable frame where a strong majority has reached the secret room.
+function findBigTeleportTime(frames) {
+  for (let index = 0; index < frames.length; index++) {
+    const frame = frames[index];
+    if (!Number.isFinite(frame?.time) || !hasSecretRoomConsensus(frame)) continue;
+    const stableUntil = frame.time + BIG_TELEPORT_STABILITY_SECONDS;
+    let next = index;
+    while (next < frames.length && frames[next].time < stableUntil &&
+      hasSecretRoomConsensus(frames[next])) next++;
+    if (next < frames.length && frames[next].time >= stableUntil) return frame.time;
+  }
+  return NaN;
+}
+
 // Samples are [frameIndex, x, z, breakBefore?]. A trail continues only across
 // consecutive recorded frames, and never across a secret-room teleport.
 function continuesTrail(previous, sample) {

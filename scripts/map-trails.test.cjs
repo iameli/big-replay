@@ -40,8 +40,8 @@ class RecordedContext {
 class Matrix {
   constructor([a, b, c, d, e, f]) { Object.assign(this, { a, b, c, d, e, f }); }
 }
-const MapView = runInNewContext(
-  readFileSync(join(__dirname, '../map-view.js'), 'utf8') + '\nMapView',
+const { MapView, findBigTeleportTime } = runInNewContext(
+  readFileSync(join(__dirname, '../map-view.js'), 'utf8') + '\n({ MapView, findBigTeleportTime })',
   { Path2D: RecordedPath, OffscreenCanvas: Bitmap, DOMMatrix: Matrix });
 const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 const samples = Array.from({ length: 800 }, (_, i) => [
@@ -164,6 +164,29 @@ test('loading another replay releases old pixels and breaks lines at invalid pos
     previous = [x, z];
   }
   assert.deepEqual(dots, new Set(['10,20', '30,40']));
+});
+
+test('Big Teleport time uses the first stable secret-room consensus', () => {
+  const frame = (time, inside) => ({
+    time,
+    players: Array.from({ length: 12 }, (_, index) => index < inside
+      ? { netId: index + 1, x: 728, y: -24, z: 340 }
+      : { netId: index + 1, x: index, y: 0, z: 0 }),
+  });
+  const frames = [
+    frame(9.9, 0),
+    frame(10, 1),
+    frame(10.1, 4),
+    frame(10.2, 10),
+    ...Array.from({ length: 12 }, (_, index) => frame(10.3 + index * 0.1, 12)),
+  ];
+  assert.equal(findBigTeleportTime(frames), 10.2);
+  assert.ok(Number.isNaN(findBigTeleportTime([
+    frame(20, 10),
+    frame(20.1, 12),
+    frame(20.2, 0),
+    frame(21.2, 0),
+  ])), 'a brief room excursion is not a synchronization anchor');
 });
 
 test('the end-of-run secret room teleport breaks trails instead of drawing across the map', () => {

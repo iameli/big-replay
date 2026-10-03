@@ -244,9 +244,10 @@ To synchronize and build a composite:
 1. Under **Sync individual recordings**, select a player and choose that player's
    downloaded recording.
 2. Use the single native video player's controls to seek to the first frame of the
-   Big Teleport at the end.
-3. Click **Mark current time as Big Teleport**. The viewer matches that source time
-   to the replay's final recorded timestamp and reports the resulting source offset.
+   Big Teleport.
+3. Click **Mark current time as Big Teleport**. The viewer detects the replay-side
+   anchor at the first one-second-stable frame where at least 80% of located players
+   are in the secret room, then reports the source offset from that anchor.
 4. Repeat for all twelve players. Use the assignment list to reopen any loaded
    source.
 5. Click **Generate FFmpeg command**, copy it, and run it in PowerShell from the

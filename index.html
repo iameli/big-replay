@@ -278,7 +278,7 @@
       <video id="mosaic-video" muted playsinline preload="metadata" hidden></video>
       <p id="video-status" role="status">No mosaic loaded. Video stays on this device.</p>
       <h3>Sync individual recordings</h3>
-      <p>Choose one player's file, seek its native player to the first frame of the Big Teleport at the end, then mark that time. The replay's final timestamp is the rough matching anchor.</p>
+      <p>Choose one player's file, seek its native player to the first frame of the Big Teleport, then mark that time. The viewer aligns it with the stable majority teleport into the replay's secret room.</p>
       <select id="source-player" aria-label="Player recording" disabled><option>Load a replay first</option></select>
       <label class="btn" id="source-video-picker">Choose file for player<input id="source-video-file" type="file" accept="video/*,.mkv" hidden disabled></label>
       <video id="source-video" controls playsinline preload="metadata"></video>
@@ -618,7 +618,7 @@ function preparePlayers() {
   }
   const ids = orderedPlayerIds();
   mosaicVideo.setPlayers(ids, playerLabel);
-  sourceVideoSync.setPlayers(ids, playerLabel, frames.at(-1).time);
+  sourceVideoSync.setPlayers(ids, playerLabel, findBigTeleportTime(frames), frames.at(-1).time);
   const used = new Set();
   // Reserve saved choices first so a newly joining player cannot steal an existing color.
   for (const id of ids) {

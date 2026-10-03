@@ -67,6 +67,7 @@ class SourceVideoSync {
     this.playerIds = [];
     this.labels = new Map();
     this.sources = new Map();
+    this.replayTeleportTime = NaN;
     this.replayEndTime = NaN;
     this.activePlayerId = null;
     this.objectUrl = null;
@@ -95,9 +96,10 @@ class SourceVideoSync {
     });
   }
 
-  setPlayers(playerIds, labelPlayer, replayEndTime) {
+  setPlayers(playerIds, labelPlayer, replayTeleportTime, replayEndTime) {
     this.clearSources();
     this.playerIds = playerIds.slice(0, 12);
+    this.replayTeleportTime = replayTeleportTime;
     this.replayEndTime = replayEndTime;
     this.labels = new Map(this.playerIds.map(id => [id, labelPlayer(id)]));
     this.playerSelect.replaceChildren(...this.playerIds.map(id => new Option(this.labels.get(id), String(id))));
@@ -148,12 +150,15 @@ class SourceVideoSync {
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = null;
     this.activePlayerId = playerId;
-
     const source = this.sources.get(playerId);
     if (!source) {
-      this.status.textContent = playerId === null
-        ? "Load a replay before assigning recordings."
-        : `No recording selected for ${this.labels.get(playerId)}.`;
+      if (playerId === null) {
+        this.status.textContent = "Load a replay before assigning recordings.";
+      } else if (Number.isFinite(this.replayTeleportTime)) {
+        this.status.textContent = `No recording selected for ${this.labels.get(playerId)} · replay Big Teleport ${this.formatTime(this.replayTeleportTime)}.`;
+      } else {
+        this.status.textContent = `No recording selected for ${this.labels.get(playerId)} · Big Teleport not detected in this replay.`;
+      }
       this.updateButtons();
       this.renderList();
       return;
@@ -168,7 +173,7 @@ class SourceVideoSync {
 
   markTeleport() {
     const source = this.sources.get(this.activePlayerId);
-    if (!source || this.video.readyState < HTMLMediaElement.HAVE_METADATA || !Number.isFinite(this.replayEndTime)) return;
+    if (!source || this.video.readyState < HTMLMediaElement.HAVE_METADATA || !Number.isFinite(this.replayTeleportTime)) return;
     source.teleportTime = this.video.currentTime;
     this.updateActiveStatus();
     this.renderList();
@@ -188,7 +193,7 @@ class SourceVideoSync {
     const source = this.sources.get(this.activePlayerId);
     if (!source || source.teleportTime === null || this.video.readyState < HTMLMediaElement.HAVE_METADATA) return;
 
-    const sourceTime = replayTime + source.teleportTime - this.replayEndTime;
+    const sourceTime = replayTime + source.teleportTime - this.replayTeleportTime;
     const target = Math.min(Math.max(0, sourceTime), Math.max(0, this.video.duration - 0.001));
     this.video.playbackRate = Math.min(16, Math.max(0.0625, rate));
     if (forceSeek || !playing || Math.abs(this.video.currentTime - target) > 0.25) this.video.currentTime = target;
@@ -210,13 +215,13 @@ class SourceVideoSync {
       this.status.textContent = `${this.labels.get(this.activePlayerId)} · ${source.file.name}${duration} · Big Teleport not marked`;
       return;
     }
-    const offset = source.teleportTime - this.replayEndTime;
-    this.status.textContent = `${this.labels.get(this.activePlayerId)} · Big Teleport ${this.formatTime(source.teleportTime)} ↔ replay end ${this.formatTime(this.replayEndTime)} · source offset ${this.formatOffset(offset)}`;
+    const offset = source.teleportTime - this.replayTeleportTime;
+    this.status.textContent = `${this.labels.get(this.activePlayerId)} · Big Teleport ${this.formatTime(source.teleportTime)} ↔ replay Big Teleport ${this.formatTime(this.replayTeleportTime)} · source offset ${this.formatOffset(offset)}`;
   }
 
   updateButtons() {
     const source = this.sources.get(this.activePlayerId);
-    this.markButton.disabled = !source || this.video.readyState < HTMLMediaElement.HAVE_METADATA || !Number.isFinite(this.replayEndTime);
+    this.markButton.disabled = !source || this.video.readyState < HTMLMediaElement.HAVE_METADATA || !Number.isFinite(this.replayTeleportTime);
     this.clearButton.disabled = !source || source.teleportTime === null;
   }
 
@@ -228,7 +233,7 @@ class SourceVideoSync {
       if (playerId === this.activePlayerId) row.classList.add("active");
       const detail = document.createElement("span");
       detail.textContent = source
-        ? `${source.file.name}${source.teleportTime === null ? " · unmarked" : ` · ${this.formatOffset(source.teleportTime - this.replayEndTime)}`}`
+        ? `${source.file.name}${source.teleportTime === null ? " · unmarked" : ` · ${this.formatOffset(source.teleportTime - this.replayTeleportTime)}`}`
         : "No file";
       detail.title = detail.textContent;
       const open = document.createElement("button");
@@ -253,8 +258,14 @@ class SourceVideoSync {
   }
 
   generatorState() {
-    if (!Number.isFinite(this.replayEndTime) || !this.playerIds.length) {
+    if (!this.playerIds.length) {
       return { ready: false, message: "Load a replay before generating a mosaic command." };
+    }
+    if (!Number.isFinite(this.replayTeleportTime)) {
+      return { ready: false, message: "Big Teleport could not be detected in this replay." };
+    }
+    if (!Number.isFinite(this.replayEndTime)) {
+      return { ready: false, message: "The replay has no valid end timestamp." };
     }
     if (this.playerIds.length !== 12) {
       return { ready: false, message: `A 4×3 mosaic requires 12 players; this replay has ${this.playerIds.length}.` };
@@ -299,7 +310,7 @@ class SourceVideoSync {
       const source = this.sources.get(playerId);
       return {
         fileName: source.file.name,
-        offset: source.teleportTime - this.replayEndTime,
+        offset: source.teleportTime - this.replayTeleportTime,
       };
     });
     return buildFfmpegMosaicCommand(sources, this.replayEndTime);
