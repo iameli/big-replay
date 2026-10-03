@@ -53,11 +53,12 @@ function solveCalibration(points) {
 }
 
 class MapView {
-  constructor(canvas, redraw, pause, playerColor, playerLabel) {
+  constructor(canvas, redraw, pause, playerColor, playerLabel, selectAt = null) {
     this.canvas = canvas;
     this.redraw = redraw;
     this.playerColor = playerColor;
     this.playerLabel = playerLabel;
+    this.selectAt = selectAt;
     this.points = [];
     this.transform = DEFAULT_MAP_TRANSFORM;
     this.pending = null;
@@ -913,7 +914,11 @@ class MapView {
       const clicked = !drag.moved;
       drag = null;
       surface.releasePointerCapture(e.pointerId);
-      if (!clicked || !this.pending) return;
+      if (!clicked) return;
+      if (!this.pending) {
+        if (this.selectAt) this.selectAt(...local(e));
+        return;
+      }
       const [u, v] = this.screenToImage(...local(e));
       if (u < 0 || v < 0 || u > MAP_SIZE || v > MAP_SIZE) {
         this.status.textContent = "Click inside the map image, not the surrounding margin.";

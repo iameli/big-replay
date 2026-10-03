@@ -176,9 +176,11 @@ game screenshot with player trails. The JPEG is published with the viewer and
 referenced by both Open Graph and Twitter large-image card metadata; app icons
 remain unchanged.
 
-For offline use, open the root `index.html` from a checkout. Keep `map-view.js`,
-`gourd-receptacles.js`, and `bigmap.jpeg` beside it. No build or package install is needed. Alternatively,
-serve the repository root with a static HTTP server and open `/?replay=run1.replay.json.gz`.
+For offline use, open the root `index.html` from a checkout. Keep
+`atproto-record.js`, `source-video-sync.js`, `mosaic-video.js`, `map-view.js`,
+`gourd-receptacles.js`, and `bigmap.jpeg` beside it. No build or package install
+is needed. Alternatively, serve the repository root with a static HTTP server and
+open `/?replay=run1.replay.json.gz`.
 
 Sharing needs the viewer served over HTTP. For local development run
 `python3 scripts/serve.py` and open `http://127.0.0.1:8080/`; like the published
@@ -197,10 +199,61 @@ an always-visible bar across the bottom of the window, below both the map and
 sidebar. On narrow screens the speed buttons wrap onto a second row. The map and
 sidebar resize above the bar, so it does not cover the map or its controls.
 
-The sidebar groups Map display, Player names & colors, Tower progress, Map alignment, and
-Events into collapsible sections. Click a heading, or focus it and press Enter
-or Space, to toggle it. Map alignment starts collapsed; the other sections start open.
-**Map display** contains the Trails dropdown and marker legend.
+### AT Protocol record routes
+
+A static `index.html` can point at an AT Protocol record through the URL hash:
+
+```text
+index.html#at://<repo>/<collection>/<record-key>
+```
+
+The client parses the AT URI, resolves handles and `did:plc`/`did:web` identities,
+and requests the unauthenticated `com.atproto.repo.getRecord` endpoint from the
+repository's PDS. `public.api.bsky.app` is the fallback when PDS discovery is not
+available. While that route is active, an **AT Protocol record** section displays
+the canonical URI, source host, CID, and JSON record value. Changing the hash loads
+the new record without reloading the viewer. A missing or non-AT hash hides the
+section.
+
+### Player video
+
+Use the **Map** and **Mosaic** buttons over the main view to switch surfaces. The
+Mosaic view contains twelve canvases in a 4-column × 3-row grid. Click a tile, or a
+player marker on the map, to focus that player's canvas; click **Mosaic** to return
+to all twelve or **Map** to return to the replay map.
+
+For normal playback, expand **Player video** and choose a finished local 4×3
+composite. The browser reads it directly through a local object URL; it is not
+uploaded or copied into browser storage. Source dimensions must divide evenly by
+four columns and three rows. MP4/H.264 is the most broadly supported input in
+Chromium. Tiles map left-to-right, top-to-bottom to players in ascending network-ID
+order.
+
+To establish rough synchronization before building the composite:
+
+1. Under **Sync individual recordings**, select a player and choose that player's
+   downloaded recording.
+2. Use the single native video player's controls to seek to the first frame of the
+   Big Teleport at the end.
+3. Click **Mark current time as Big Teleport**. The viewer matches that source time
+   to the replay's final recorded timestamp and reports the resulting source offset.
+4. Repeat for other players. Use the assignment list to reopen any loaded source.
+
+After a source is marked, replay scrubbing, play/pause, and 1×/2×/4×/8× speed also
+control the selected individual recording using that offset. The automatic anchor is
+only a rough heuristic: it assumes the replay's final sample represents the same Big
+Teleport frame selected in the recording. Files and marks remain in memory for the
+current page only.
+
+For a finished composite, video time zero corresponds to replay time zero. Scrubbing
+seeks the composite to the selected frame timestamp. If a test clip ends before the
+replay, its last frame remains visible while the replay continues.
+
+The sidebar groups Map display, Player video, Player names & colors, Tower progress,
+Map alignment, and Events into collapsible sections. An AT Protocol record section
+appears when the hash route points at a record. Player video and Map alignment start
+collapsed; the other sections start open. **Map display** contains the Trails
+dropdown and marker legend.
 
 ### Sharing replays
 

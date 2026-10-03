@@ -38,8 +38,8 @@
   .replay-item a { display: block; padding: 7px 8px; border-radius: 4px; color: #dfe5ee; text-decoration: none; overflow-wrap: anywhere; }
   .replay-item a:hover, .replay-item a:focus-visible { background: #1c2330; outline: none; }
   .replay-item .when { display: block; font-size: 11px; color: #7d8ba0; }
-  #canvaswrap { grid-column: 1; grid-row: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #172e3a; touch-action: none; cursor: grab; }
-  canvas { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+  #canvaswrap { grid-column: 1; grid-row: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #172e3a; }
+  #map { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 0 0; }
   #sidebar { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; overflow-y: auto; border-left: 1px solid #232a36; background: #151a23; display: flex; flex-direction: column; }
   #viewer-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; background: #151a23; }
   #sidebar h1 { display: flex; align-items: center; gap: 6px; font-size: 14px; margin: 0; color: #c9d6e8; white-space: nowrap; }
@@ -95,11 +95,16 @@
   .legend svg { width: 20px; height: 26px; overflow: visible; }
   .legend .lg-land::before { content: ""; display: inline-block; border: 2px solid #10131a; }
   .lg-land::before { background: #6f7f96; width: 4px !important; height: 4px !important; }
-  canvas { touch-action: none; cursor: grab; }
-  canvas.placing { cursor: crosshair; }
+  #map { touch-action: none; cursor: grab; }
+  #map.placing { cursor: crosshair; }
   #map-tools { position: absolute; bottom: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 12px; pointer-events: none; }
   #map-tools button { pointer-events: auto; }
   #coordinates { background: #10131adb; padding: 5px 8px; font: 11px monospace; }
+  #surface-switcher { position: absolute; z-index: 3; top: 12px; right: 12px; display: flex; gap: 4px; padding: 4px; border: 1px solid #313c52; border-radius: 6px; background: #10131adb; }
+  #surface-switcher .btn[aria-pressed=true] { border-color: #56b4ff; color: #fff; }
+  #canvaswrap[data-view=map] #video-grid { display: none; }
+  #canvaswrap:not([data-view=map]) #map, #canvaswrap:not([data-view=map]) #map-tools { display: none; }
+  #canvaswrap:not([data-view=map]) { cursor: default; }
   #alignment p, #anchor-list { font-size: 11px; color: #aab8cc; }
   #alignment-status { color: #f2d18a !important; }
   #anchor-source { width: 100%; margin: 5px 0 8px; background: #232b3a; color: #dfe5ee; padding: 5px; }
@@ -128,6 +133,30 @@
   .editing-nicknames .player-nickname { display: flex; }
   .editing-nicknames #nickname-help, .editing-nicknames #nickname-status, #nickname-status.storage-error { display: block; }
   button:disabled { opacity: .45; cursor: default; }
+  #video-section p { font-size: 11px; color: #aab8cc; margin: 6px 0; }
+  #video-section h3 { margin: 14px 0 4px; font-size: 12px; color: #c9d6e8; }
+  #video-picker, #source-video-picker { display: inline-block; margin: 2px 0 4px; }
+  #video-grid { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px; background: #090b0f; }
+  .video-tile { position: relative; min-width: 0; min-height: 0; padding: 0; overflow: hidden; border: 2px solid #313c52; border-radius: 4px; background: #090b0f; color: #fff; cursor: pointer; }
+  .video-tile:hover { border-color: #526675; }
+  .video-tile:focus-visible { outline: 2px solid #56b4ff; outline-offset: 2px; }
+  .video-tile.selected { border-color: #56b4ff; }
+  .video-tile canvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #090b0f; }
+  .video-tile span { position: absolute; left: 4px; right: 4px; bottom: 4px; overflow: hidden; padding: 2px 4px; background: #10131acc; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  #canvaswrap[data-view=player] #video-grid { display: block; }
+  #canvaswrap[data-view=player] .video-tile { display: none; width: 100%; height: 100%; }
+  #canvaswrap[data-view=player] .video-tile.selected { display: block; }
+  #source-player { width: 100%; margin: 4px 0; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; }
+  #source-video { display: block; width: 100%; margin-top: 6px; aspect-ratio: 16 / 9; background: #090b0f; }
+  #source-video-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+  #source-video-list { display: grid; gap: 4px; margin-top: 8px; }
+  .source-video-row { display: grid; grid-template-columns: minmax(90px, auto) minmax(0, 1fr); align-items: center; gap: 6px; padding: 3px; border: 1px solid transparent; border-radius: 4px; }
+  .source-video-row.active { border-color: #526675; background: #1c2330; }
+  .source-video-row .btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-video-row span { min-width: 0; overflow: hidden; color: #8fa3bd; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  #at-record-section p { margin: 6px 0; color: #aab8cc; font-size: 11px; overflow-wrap: anywhere; }
+  #at-record-uri { color: #dfe5ee; font-family: ui-monospace, monospace; }
+  #at-record-value { max-height: 320px; margin: 8px 0 0; overflow: auto; padding: 8px; border-radius: 4px; background: #090b0f; color: #cfd9e8; font: 10px/1.4 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
   @media (max-width: 650px) {
     body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 3fr) minmax(0, 2fr) auto; }
     #sidebar { grid-column: 1; grid-row: 2; border-left: 0; border-top: 1px solid #232a36; }
@@ -150,8 +179,13 @@
   </section>
 </div>
 
-<div id="canvaswrap">
+<div id="canvaswrap" data-view="map">
   <canvas id="map" aria-label="Replay map. Drag to pan and scroll to zoom."></canvas>
+  <div id="video-grid" aria-label="Player camera views"></div>
+  <div id="surface-switcher" role="group" aria-label="Main view">
+    <button class="btn" id="view-map" type="button" aria-pressed="true">Map</button>
+    <button class="btn" id="view-mosaic" type="button" aria-pressed="false">Mosaic</button>
+  </div>
   <div id="map-tools"><button class="btn" id="fit-map">Fit map</button><span id="coordinates">Drag to pan · scroll to zoom</span></div>
 </div>
 
@@ -199,6 +233,14 @@
       <p id="share-status" role="status"></p>
     </div>
   </details>
+  <details class="sidebar-section" id="at-record-section" hidden>
+    <summary>AT Protocol record</summary>
+    <div class="section-body">
+      <p id="at-record-uri"></p>
+      <p id="at-record-status" role="status"></p>
+      <pre id="at-record-value"></pre>
+    </div>
+  </details>
   <details class="sidebar-section" id="map-display-section" open>
     <summary>Map display</summary>
   <div class="row">
@@ -225,6 +267,26 @@
       <circle cx="10" cy="13" r="3" fill="none" stroke="#aab8cc" stroke-width="0.9"/>
     </svg>empty receptacle</span><span class="lg-land">landmark</span>
   </div>
+  </details>
+  <details class="sidebar-section" id="video-section">
+    <summary>Player video</summary>
+    <div class="section-body">
+      <p>Load a finished local 4×3 composite for the Mosaic view. Tiles map left-to-right, top-to-bottom to players by ascending network ID.</p>
+      <label class="btn" id="video-picker">Choose mosaic video<input id="video-file" type="file" accept="video/*,.mkv" hidden></label>
+      <video id="mosaic-video" muted playsinline preload="metadata" hidden></video>
+      <p id="video-status" role="status">No mosaic loaded. Video stays on this device.</p>
+      <h3>Sync individual recordings</h3>
+      <p>Choose one player's file, seek its native player to the first frame of the Big Teleport at the end, then mark that time. The replay's final timestamp is the rough matching anchor.</p>
+      <select id="source-player" aria-label="Player recording" disabled><option>Load a replay first</option></select>
+      <label class="btn" id="source-video-picker">Choose file for player<input id="source-video-file" type="file" accept="video/*,.mkv" hidden disabled></label>
+      <video id="source-video" controls playsinline preload="metadata"></video>
+      <p id="source-video-status" role="status">Load a replay before assigning recordings.</p>
+      <div id="source-video-actions">
+        <button class="btn" id="mark-teleport" type="button" disabled>Mark current time as Big Teleport</button>
+        <button class="btn" id="clear-teleport" type="button" disabled>Clear mark</button>
+      </div>
+      <div id="source-video-list" aria-label="Individual recording assignments"></div>
+    </div>
   </details>
   <details class="sidebar-section" id="player-settings" open>
     <summary>Player names &amp; colors</summary>
@@ -332,11 +394,20 @@
 
 <script src="atproto.js"></script>
 <script src="replay-players.js"></script>
+<script src="atproto-record.js"></script>
+<script src="source-video-sync.js"></script>
+<script src="mosaic-video.js"></script>
 <script src="map-view.js"></script>
 <script src="gourd-receptacles.js"></script>
 <script>
 "use strict";
 document.getElementById("about-open").addEventListener("click", () => document.getElementById("about-dialog").showModal());
+new AtprotoRecordRoute(
+  document.getElementById("at-record-section"),
+  document.getElementById("at-record-status"),
+  document.getElementById("at-record-uri"),
+  document.getElementById("at-record-value"),
+);
 const receptacles = new GourdReceptacles();
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const previousReceptacles = receptacles.slots.map(() => null);
@@ -393,12 +464,38 @@ let replaySource = null, shared = null;
 // Canonical netId → every netId merged into it when a player reconnected.
 let playerAliases = new Map();
 const account = new AtmosphereAccount();
+let selectedVideoPlayer = null;
+const canvasWrap = document.getElementById("canvaswrap");
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
 const scrub = document.getElementById("scrub"), timeEl = document.getElementById("time");
 const playBtn = document.getElementById("play"), trailSelect = document.getElementById("trail-mode");
 const eventsEl = document.getElementById("events"), towersEl = document.getElementById("towers");
 const alignmentPanel = document.getElementById("alignment"), statusEl = document.getElementById("status");
-const mapView = new MapView(canvas, render, () => setPlaying(false), playerColor, playerLabel);
+const mosaicVideo = new MosaicVideo(
+  document.getElementById("mosaic-video"),
+  document.getElementById("video-grid"),
+  document.getElementById("video-status"),
+  selectVideoPlayer,
+);
+const sourceVideoSync = new SourceVideoSync({
+  video: document.getElementById("source-video"),
+  playerSelect: document.getElementById("source-player"),
+  fileInput: document.getElementById("source-video-file"),
+  status: document.getElementById("source-video-status"),
+  markButton: document.getElementById("mark-teleport"),
+  clearButton: document.getElementById("clear-teleport"),
+  list: document.getElementById("source-video-list"),
+  pauseReplay: () => setPlaying(false),
+  selectPlayer: netId => selectVideoPlayer(netId, false, false),
+});
+document.getElementById("video-file").addEventListener("change", e => {
+  if (!e.target.files[0]) return;
+  mosaicVideo.load(e.target.files[0]);
+  setSurfaceView("mosaic");
+});
+document.getElementById("view-map").addEventListener("click", () => setSurfaceView("map"));
+document.getElementById("view-mosaic").addEventListener("click", () => setSurfaceView("mosaic"));
+const mapView = new MapView(canvas, render, () => setPlaying(false), playerColor, playerLabel, selectPlayerAt);
 trailSelect.value = trailMode;
 alignmentPanel.addEventListener("toggle", () => {
   if (alignmentPanel.open && replay) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
@@ -442,8 +539,43 @@ function nicknameStatusText() {
 
 function refreshPlayerLabels() {
   renderEvents();
+  mosaicVideo.refreshLabels(playerLabel);
+  sourceVideoSync.refreshLabels(playerLabel);
   if (alignmentPanel.open && replay) mapView.setSources(frames[frameIdx], replay.header.landmarks || []);
   render();
+}
+
+function setSurfaceView(view) {
+  if (view === "player" && selectedVideoPlayer === null) view = "mosaic";
+  canvasWrap.dataset.view = view;
+  document.getElementById("view-map").setAttribute("aria-pressed", String(view === "map"));
+  document.getElementById("view-mosaic").setAttribute("aria-pressed", String(view !== "map"));
+  if (view === "map") render();
+  else mosaicVideo.draw();
+}
+
+function selectVideoPlayer(netId, focus = true, updateSource = true) {
+  selectedVideoPlayer = netId;
+  mosaicVideo.selectPlayer(netId);
+  if (updateSource) sourceVideoSync.selectPlayer(netId);
+  document.getElementById("video-section").open = true;
+  if (focus) setSurfaceView("player");
+  render();
+}
+
+function selectPlayerAt(x, y) {
+  if (!replay || !mapView.transform || mapView.editing) return;
+  let nearest = null, nearestDistance = 24;
+  for (const player of frames[frameIdx].players) {
+    if (!Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
+    const [sx, sy] = toScreen(player.x, player.z);
+    const distance = Math.hypot(x - sx, y - sy);
+    if (distance <= nearestDistance) {
+      nearest = player.netId;
+      nearestDistance = distance;
+    }
+  }
+  if (nearest !== null) selectVideoPlayer(nearest);
 }
 
 function preparePlayers() {
@@ -465,6 +597,8 @@ function preparePlayers() {
       ? ["name", name] : ["recording", nicknameRecordingScope, id]));
   }
   const ids = [...playerNames.keys()].sort((a, b) => a - b);
+  mosaicVideo.setPlayers(ids, playerLabel);
+  sourceVideoSync.setPlayers(ids, playerLabel, frames.at(-1).time);
   const used = new Set();
   // Reserve saved choices first so a newly joining player cannot steal an existing color.
   for (const id of ids) {
@@ -639,6 +773,8 @@ async function parseBuffer(buf, name, sharedReplay = null) {
   setShared(sharedReplay);
   // A local file replaces any shared replay, so leave its /<did>/<rkey> address.
   if (!sharedReplay && location.pathname !== "/") history.pushState(null, "", "/");
+  selectedVideoPlayer = null;
+  mosaicVideo.selectIndex(-1);
   resetMarkerSprites();
   frames = replay.frames;
   events = replay.events || [];
@@ -1240,6 +1376,13 @@ function render() {
     const p = fr.players[i];
     const color = playerColor(p.netId);
     const [sx, sy] = toScreen(p.x, p.z);
+    if (p.netId === selectedVideoPlayer) {
+      ctx.beginPath();
+      ctx.arc(sx, sy, 24, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
     drawIcon(playerIcon, sx, sy, color);
     if (p.carriedGourd && !occupants.includes(p.carriedGourd)) {
       drawIcon(gourdIcon, sx + 17, sy + 10, gourdColor(p.carriedGourd), 0.45);
@@ -1259,6 +1402,8 @@ function tick() {
   scrub.value = frameIdx;
   const time = fmt(fr.time);
   if (timeEl.textContent !== time) timeEl.textContent = time;
+  mosaicVideo.sync(playing ? playbackTime : fr.time, playing, speed);
+  sourceVideoSync.sync(playing ? playbackTime : fr.time, playing, speed);
   if (alignmentPanel.open) mapView.setSources(fr, replay.header.landmarks || []);
   updateReceptaclePulses();
   render();
@@ -1273,18 +1418,25 @@ function fmt(s) {
 }
 
 function setPlaying(v) {
+  v = Boolean(v && replay);
   if (v && replay && frameIdx === frames.length - 1) { frameIdx = 0; tick(); }
   playbackTime = frames[frameIdx]?.time || 0;
   lastTick = performance.now();
   playing = v;
   playBtn.textContent = playing ? "⏸" : "▶";
   playBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
+  mosaicVideo.sync(playbackTime, playing, speed, true);
+  sourceVideoSync.sync(playbackTime, playing, speed, true);
 }
 
 playBtn.addEventListener("click", () => setPlaying(!playing));
 scrub.addEventListener("input", () => { setPlaying(false); frameIdx = +scrub.value; tick(); });
 for (const [mult, btn] of [[1, document.getElementById("sp1")], [2, document.getElementById("sp2")], [4, document.getElementById("sp4")], [8, document.getElementById("sp8")]]) {
-  btn.addEventListener("click", () => { speed = mult; });
+  btn.addEventListener("click", () => {
+    speed = mult;
+    mosaicVideo.sync(playbackTime, playing, speed, true);
+    sourceVideoSync.sync(playbackTime, playing, speed, true);
+  });
 }
 trailSelect.addEventListener("change", () => {
   trailMode = trailSelect.value;
