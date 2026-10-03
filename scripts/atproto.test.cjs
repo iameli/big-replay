@@ -46,6 +46,7 @@ test('records hold integer durations, normalized datetimes, and players without 
   const record = plain(atproto.buildReplayRecord({
     blob, title: 'WR', description: '', durationMs: 4256803.69,
     video: ' at://did:plc:video123/place.stream.video/3mxyz ',
+    videoStartMs: 532547.6,
     header: { recordedAt: '2026-09-27T22:02:27.3621299Z', gameVersion: '1.5.1 2608271531' },
     players: [{ netId: 579, name: 'Rando' }, { netId: 0, name: '' }],
     stats: { maxPlayers: 12, gourdsPlaced: 45, towersCompleted: 9, deaths: 3 },
@@ -55,6 +56,7 @@ test('records hold integer durations, normalized datetimes, and players without 
     $type: 'com.iameli.bigWalk.replay', replay: blob, format: 'com.iameli.bigWalk.replay#jsonGzV1',
     createdAt: '2026-09-28T00:00:00.000Z', title: 'WR', recordedAt: '2026-09-27T22:02:27.362Z',
     video: 'at://did:plc:video123/place.stream.video/3mxyz',
+    videoStartMs: 532548,
     durationMs: 4256804, gameVersion: '1.5.1 2608271531',
     players: [{ netId: 579, name: 'Rando' }, { netId: 0 }],
     stats: { maxPlayers: 12, gourdsPlaced: 45, towersCompleted: 9, deaths: 3 },
@@ -75,7 +77,7 @@ test('Streamplace video references reject other collections and malformed AT URI
     video: 'at://did:plc:abc/app.bsky.feed.post/3mxyz',
     players: [],
     createdAt: '2026-09-28T00:00:00.000Z',
-  }), /place\\.stream\\.video/);
+  }), /place\.stream\.video/);
 });
 
 test('nicknames are set and cleared per netId without touching recorded names', () => {

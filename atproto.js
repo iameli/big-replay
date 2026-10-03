@@ -82,7 +82,7 @@ function rkeyFromUri(uri) {
 // ---------- records ----------
 // atproto records cannot hold floats: durations are integer milliseconds, and
 // all positions stay inside the replay blob.
-function buildReplayRecord({ blob, title, description, video, header, players, stats, durationMs, createdAt }) {
+function buildReplayRecord({ blob, title, description, video, videoStartMs, header, players, stats, durationMs, createdAt }) {
   const record = {
     $type: REPLAY_COLLECTION,
     replay: blob,
@@ -95,6 +95,7 @@ function buildReplayRecord({ blob, title, description, video, header, players, s
     const uri = streamplaceVideoUri(video);
     if (!uri) throw new Error("Streamplace video must be an at:// DID URI for a place.stream.video record.");
     record.video = uri;
+    if (Number.isFinite(videoStartMs)) record.videoStartMs = Math.max(0, Math.round(videoStartMs));
   }
   const recordedAt = normalizeDatetime(header?.recordedAt);
   if (recordedAt) record.recordedAt = recordedAt;

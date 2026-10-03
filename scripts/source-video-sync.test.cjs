@@ -4,8 +4,9 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
 
-const buildFfmpegMosaicCommand = runInNewContext(
-  readFileSync(join(__dirname, '../source-video-sync.js'), 'utf8') + '\nbuildFfmpegMosaicCommand');
+const { buildFfmpegMosaicCommand, ffmpegMosaicStartTime } = runInNewContext(
+  readFileSync(join(__dirname, '../source-video-sync.js'), 'utf8')
+    + '\n({ buildFfmpegMosaicCommand, ffmpegMosaicStartTime })');
 
 const replayTeleportTime = 4137.1587931;
 const replayEndTime = 4256.8036944;
@@ -29,33 +30,41 @@ const sources = [
   { fileName: 'P12.webm', offset: -443.122 },
 ];
 
-test('supplied Big Game timings generate a P1-P12 aligned mosaic command', () => {
+test('supplied Big Game timings generate a compact P1-P12 aligned mosaic command', () => {
   const command = buildFfmpegMosaicCommand(sources, replayEndTime);
   const inputFiles = [...command.matchAll(/-i '([^']+)'/g)].map(match => match[1]);
   assert.deepEqual(inputFiles, sources.map(source => source.fileName));
 
-  const delays = [...command.matchAll(/start_duration=(\d+\.\d+)/g)]
+  const startTime = ffmpegMosaicStartTime(sources);
+  assert.equal(startTime, 532.548);
+  const sourceTrims = [...command.matchAll(/\[\d+:v\]trim=start=(\d+\.\d+)/g)]
     .map(match => Number(match[1]));
-  assert.deepEqual(delays, sources.map(source => -source.offset));
+  assert.deepEqual(sourceTrims, [
+    24.905, 2.918, 7.849, 86.710, 14.698, 144.548,
+    52.012, 450.663, 0, 50.332, 19.398, 89.426,
+  ]);
   markedSourceTimes.forEach((sourceTeleportTime, index) => {
-    assert.ok(Math.abs(sourceTeleportTime + delays[index] - replayTeleportTime) < 0.001);
+    assert.ok(Math.abs(
+      sourceTeleportTime - sourceTrims[index] - (replayTeleportTime - startTime),
+    ) < 0.001);
   });
 
-  assert.doesNotMatch(command, /trim=start=/);
-  assert.match(command, /-t 4256\.804/);
+  assert.doesNotMatch(command, /start_duration=/);
+  assert.match(command, /-t 3724\.256/);
   assert.match(command, /\[v0\]\[v1\]\[v2\]\[v3\]\[v4\]\[v5\]\[v6\]\[v7\]\[v8\]\[v9\]\[v10\]\[v11\]xstack=inputs=12/);
   assert.match(command, /layout=0_0\|640_0\|1280_0\|1920_0\|0_360\|640_360\|1280_360\|1920_360\|0_720\|640_720\|1280_720\|1920_720/);
   assert.match(command, /-c:v libx264 -preset medium -crf 20/);
   assert.ok(command.endsWith("'big-replay-4x3-synced.mp4'"));
 });
 
-test('a source that starts before replay time zero is trimmed and filenames are PowerShell-safe', () => {
+test('all sources are trimmed to the common mosaic start and filenames are PowerShell-safe', () => {
   const earlySources = sources.map(source => ({ ...source, offset: 0 }));
   earlySources[0] = { fileName: "P1 O'Brien.webm", offset: 1.25 };
   const command = buildFfmpegMosaicCommand(earlySources, replayEndTime);
+  assert.equal(ffmpegMosaicStartTime(earlySources), 0);
   assert.match(command, /-i 'P1 O''Brien\.webm'/);
   assert.match(command, /\[0:v\]trim=start=1\.250,setpts=PTS-STARTPTS/);
-  assert.match(command, /\[0:v\].*start_duration=0\.000/);
+  assert.doesNotMatch(command, /start_duration=/);
 });
 
 test('mosaic command generation rejects incomplete or invalid inputs', () => {
@@ -65,4 +74,8 @@ test('mosaic command generation rejects incomplete or invalid inputs', () => {
     sources.map((source, index) => index === 3 ? { ...source, offset: NaN } : source),
     replayEndTime,
   ), /finite offset/);
+  assert.throws(() => buildFfmpegMosaicCommand(
+    sources.map(source => ({ ...source, offset: -5000 })),
+    replayEndTime,
+  ), /do not overlap/);
 });

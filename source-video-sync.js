@@ -8,6 +8,10 @@ function quotePowerShell(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
+function ffmpegMosaicStartTime(sources) {
+  return Math.max(0, ...sources.map(source => -source.offset));
+}
+
 function buildFfmpegMosaicCommand(sources, replayEndTime) {
   if (!Array.isArray(sources) || sources.length !== 12) {
     throw new Error("A 4×3 mosaic requires exactly 12 ordered sources.");
@@ -19,17 +23,18 @@ function buildFfmpegMosaicCommand(sources, replayEndTime) {
     throw new Error("Each mosaic source requires a filename and finite offset.");
   }
 
-  const duration = ffmpegSeconds(replayEndTime);
+  const startTime = ffmpegMosaicStartTime(sources);
+  if (startTime >= replayEndTime) throw new Error("The source recordings do not overlap the replay.");
+  const duration = ffmpegSeconds(replayEndTime - startTime);
   const command = ["ffmpeg", "-hide_banner", "-n"];
   for (const source of sources) command.push("-i", quotePowerShell(source.fileName));
 
   const filters = sources.map((source, index) => {
-    const trim = source.offset > 0 ? `trim=start=${ffmpegSeconds(source.offset)},` : "";
-    const delay = ffmpegSeconds(Math.max(0, -source.offset));
-    return `[${index}:v]${trim}setpts=PTS-STARTPTS,fps=30,`
+    const sourceStart = ffmpegSeconds(startTime + source.offset);
+    return `[${index}:v]trim=start=${sourceStart},setpts=PTS-STARTPTS,fps=30,`
       + "scale=640:360:force_original_aspect_ratio=decrease,"
       + "pad=640:360:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p,"
-      + `tpad=start_mode=add:start_duration=${delay}:stop_mode=clone:stop_duration=${duration}:color=black,`
+      + `tpad=stop_mode=clone:stop_duration=${duration}:color=black,`
       + `trim=duration=${duration},setpts=PTS-STARTPTS[v${index}]`;
   });
   const labels = sources.map((_, index) => `[v${index}]`).join("");
@@ -49,7 +54,8 @@ function buildFfmpegMosaicCommand(sources, replayEndTime) {
 class SourceVideoSync {
   constructor({
     video, playerSelect, fileInput, status, markButton, clearButton, list,
-    generateButton, copyButton, commandOutput, commandStatus, pauseReplay, selectPlayer,
+    generateButton, copyButton, commandOutput, commandStatus, setMosaicStartTime,
+    pauseReplay, selectPlayer,
   }) {
     this.video = video;
     this.playerSelect = playerSelect;
@@ -62,6 +68,7 @@ class SourceVideoSync {
     this.copyButton = copyButton;
     this.commandOutput = commandOutput;
     this.commandStatus = commandStatus;
+    this.onMosaicStartTime = setMosaicStartTime;
     this.pauseReplay = pauseReplay;
     this.onSelectPlayer = selectPlayer;
     this.playerIds = [];
@@ -299,21 +306,27 @@ class SourceVideoSync {
       this.updateGeneratorStatus();
       return;
     }
-    this.commandOutput.value = this.buildFfmpegCommand();
+    const sources = this.commandSources();
+    const startTime = ffmpegMosaicStartTime(sources);
+    this.commandOutput.value = buildFfmpegMosaicCommand(sources, this.replayEndTime);
     this.commandOutput.hidden = false;
     this.copyButton.disabled = false;
-    this.commandStatus.textContent = "Generated in P1–P12 tile order. Run it in PowerShell from the recordings folder.";
+    this.onMosaicStartTime(startTime);
+    this.commandStatus.textContent = `Generated in P1–P12 tile order · starts at replay ${this.formatTime(startTime)}. Run it in PowerShell from the recordings folder.`;
   }
 
-  buildFfmpegCommand() {
-    const sources = this.playerIds.map(playerId => {
+  commandSources() {
+    return this.playerIds.map(playerId => {
       const source = this.sources.get(playerId);
       return {
         fileName: source.file.name,
         offset: source.teleportTime - this.replayTeleportTime,
       };
     });
-    return buildFfmpegMosaicCommand(sources, this.replayEndTime);
+  }
+
+  buildFfmpegCommand() {
+    return buildFfmpegMosaicCommand(this.commandSources(), this.replayEndTime);
   }
 
   async copyCommand() {

@@ -136,6 +136,8 @@
   #video-section p { font-size: 11px; color: #aab8cc; margin: 6px 0; }
   #video-section h3 { margin: 14px 0 4px; font-size: 12px; color: #c9d6e8; }
   #video-picker, #source-video-picker { display: inline-block; margin: 2px 0 4px; }
+  #mosaic-start-label { display: block; margin: 6px 0; color: #aab8cc; font-size: 11px; }
+  #mosaic-start { width: 82px; margin: 0 3px; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; }
   #video-grid { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px; background: #090b0f; }
   .video-tile { position: relative; min-width: 0; min-height: 0; padding: 0; overflow: hidden; border: 2px solid #313c52; border-radius: 4px; background: #090b0f; color: #fff; cursor: pointer; }
   .video-tile:hover { border-color: #526675; }
@@ -275,6 +277,7 @@
     <div class="section-body">
       <p>Load a finished local 4×3 composite for the Mosaic view. Tiles map left-to-right, top-to-bottom by the numeric P-prefix in each player's name: P1 through P12.</p>
       <label class="btn" id="video-picker">Choose mosaic video<input id="video-file" type="file" accept="video/*,.mkv" hidden></label>
+      <label id="mosaic-start-label">Mosaic starts at replay <input id="mosaic-start" type="number" min="0" step="0.001" value="0.000"> seconds</label>
       <video id="mosaic-video" muted playsinline preload="metadata" hidden></video>
       <p id="video-status" role="status">No mosaic loaded. Video stays on this device.</p>
       <h3>Sync individual recordings</h3>
@@ -393,6 +396,7 @@
     <label>Title<input id="share-title-input" type="text" maxlength="100" required></label>
     <label>Description <span>(optional)</span><textarea id="share-description" maxlength="1000"></textarea></label>
     <label>Streamplace video <span>(optional)</span><input id="share-video" type="text" maxlength="2048" placeholder="at://did:plc:…/place.stream.video/…" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+    <label>Mosaic start <span>(replay seconds)</span><input id="share-video-start" type="number" min="0" step="0.001" value="0.000"></label>
     <p id="share-summary"></p>
     <p>Publishing uploads the whole replay file to your account. Anyone with the link can watch it, including every player's recorded Steam name. After publishing, you can set nicknames under <b>Player names &amp; colors</b>.</p>
     <p id="share-form-status" role="status"></p>
@@ -478,6 +482,13 @@ const account = new AtmosphereAccount();
 let selectedVideoPlayer = null;
 const canvasWrap = document.getElementById("canvaswrap");
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
+const mosaicStartInput = document.getElementById("mosaic-start");
+function setMosaicStartTime(seconds) {
+  const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  mosaicStartInput.value = value.toFixed(3);
+  mosaicVideo.setTimelineStart(value);
+}
+mosaicStartInput.addEventListener("change", () => setMosaicStartTime(Number(mosaicStartInput.value)));
 const scrub = document.getElementById("scrub"), timeEl = document.getElementById("time");
 const playBtn = document.getElementById("play"), trailSelect = document.getElementById("trail-mode");
 const eventsEl = document.getElementById("events"), towersEl = document.getElementById("towers");
@@ -500,6 +511,7 @@ const sourceVideoSync = new SourceVideoSync({
   copyButton: document.getElementById("copy-ffmpeg"),
   commandOutput: document.getElementById("ffmpeg-command"),
   commandStatus: document.getElementById("ffmpeg-status"),
+  setMosaicStartTime,
   pauseReplay: () => setPlaying(false),
   selectPlayer: netId => selectVideoPlayer(netId, false, false),
 });
@@ -792,6 +804,7 @@ async function parseBuffer(buf, name, sharedReplay = null) {
   replay = parsed;
   replaySource = { buf, gzipped };
   mosaicVideo.reset();
+  setMosaicStartTime(0);
   setShared(sharedReplay);
   // A local file replaces any shared replay, so leave its /<did>/<rkey> address.
   if (!sharedReplay && location.pathname !== "/") history.pushState(null, "", "/");
@@ -869,7 +882,10 @@ function setShared(value) {
   description.textContent = shared.record.description || "";
   description.hidden = !shared.record.description;
   const videoUri = streamplaceVideoUri(shared.record.video);
-  if (videoUri) mosaicVideo.loadStreamplace(videoUri);
+  if (videoUri) {
+    setMosaicStartTime(Number.isInteger(shared.record.videoStartMs) ? shared.record.videoStartMs / 1000 : 0);
+    mosaicVideo.loadStreamplace(videoUri);
+  }
 }
 
 function renderSharing() {
@@ -961,6 +977,7 @@ function openShareDialog() {
     `Big Walk · ${count} player${count === 1 ? "" : "s"} · ${fmt(replayDurationMs() / 1000)}`;
   document.getElementById("share-description").value = "";
   document.getElementById("share-video").value = "";
+  document.getElementById("share-video-start").value = mosaicVideo.timelineStart.toFixed(3);
   const size = replaySource.gzipped ? megabytes(replaySource.buf.byteLength) : "compressed on upload";
   document.getElementById("share-summary").textContent =
     `File: ${size}. Recorded names: ${players.length ? players.join(", ") : "none"}.`;
@@ -979,6 +996,10 @@ async function publishReplay(event) {
     if (video && !streamplaceVideoUri(video)) {
       throw new Error("Streamplace video must look like at://did:…/place.stream.video/record-key.");
     }
+    const videoStartSeconds = Number(document.getElementById("share-video-start").value);
+    if (video && (!Number.isFinite(videoStartSeconds) || videoStartSeconds < 0)) {
+      throw new Error("Mosaic start must be a non-negative replay time in seconds.");
+    }
     const bytes = replaySource.gzipped ? replaySource.buf : await gzipBytes(replaySource.buf);
     setStatus(shareFormStatus, `Uploading ${megabytes(bytes.byteLength)}…`);
     const blob = await account.uploadBlob(bytes, "application/gzip");
@@ -989,6 +1010,7 @@ async function publishReplay(event) {
       title: document.getElementById("share-title-input").value.trim(),
       description: document.getElementById("share-description").value.trim(),
       video,
+      videoStartMs: video ? videoStartSeconds * 1000 : undefined,
       header: replay.header,
       players,
       stats: replayStats(),

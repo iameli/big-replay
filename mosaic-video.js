@@ -28,6 +28,7 @@ class MosaicVideo {
     this.sourceKind = null;
     this.hls = null;
     this.loadToken = 0;
+    this.timelineStart = 0;
     this.frameCallback = null;
 
     for (let index = 0; index < MosaicVideo.TILE_COUNT; index++) {
@@ -107,9 +108,15 @@ class MosaicVideo {
     }
   }
 
+  setTimelineStart(seconds) {
+    this.timelineStart = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    this.sync(this.targetTime, this.shouldPlay, this.rate, true);
+  }
+
   reset() {
     this.clearMedia();
     this.sourceKind = null;
+    this.timelineStart = 0;
     this.status.textContent = "No mosaic loaded. Video stays on this device.";
   }
 
@@ -142,7 +149,8 @@ class MosaicVideo {
     }
     this.ready = true;
     const source = this.sourceKind === "streamplace" ? "Streamplace mosaic" : "mosaic";
-    this.status.textContent = `${width}×${height} ${source} · 12 × ${tileWidth}×${tileHeight} views · ${this.formatDuration(this.video.duration)}`;
+    const start = this.timelineStart ? ` · starts at replay ${this.formatDuration(this.timelineStart)}` : "";
+    this.status.textContent = `${width}×${height} ${source} · 12 × ${tileWidth}×${tileHeight} views · ${this.formatDuration(this.video.duration)}${start}`;
     this.sync(this.targetTime, this.shouldPlay, this.rate, true);
     this.startFrameLoop();
   }
@@ -184,13 +192,19 @@ class MosaicVideo {
     this.rate = rate;
     if (!this.ready) return;
 
-    const end = Number.isFinite(this.video.duration) ? Math.max(0, this.video.duration - 0.001) : this.targetTime;
-    const target = Math.min(this.targetTime, end);
+    const videoTime = this.targetTime - this.timelineStart;
+    if (videoTime < 0) {
+      this.video.pause();
+      this.clearTiles();
+      return;
+    }
+    const end = Number.isFinite(this.video.duration) ? Math.max(0, this.video.duration - 0.001) : videoTime;
+    const target = Math.min(videoTime, end);
     this.video.playbackRate = Math.min(16, Math.max(0.0625, rate));
     if (forceSeek || !playing || Math.abs(this.video.currentTime - target) > 0.25) {
       this.video.currentTime = target;
     }
-    if (playing && this.targetTime < this.video.duration) {
+    if (playing && videoTime < this.video.duration) {
       if (this.video.paused) this.video.play().catch(() => {
         this.status.textContent = "Video is ready; press Play again if the browser blocked playback.";
       });
@@ -202,6 +216,10 @@ class MosaicVideo {
 
   draw() {
     if (!this.ready || this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+    if (this.targetTime < this.timelineStart) {
+      this.clearTiles();
+      return;
+    }
     const tileWidth = this.video.videoWidth / MosaicVideo.COLUMNS;
     const tileHeight = this.video.videoHeight / MosaicVideo.ROWS;
     for (let index = 0; index < this.tiles.length; index++) {
@@ -212,6 +230,10 @@ class MosaicVideo {
         0, 0, tileWidth, tileHeight,
       );
     }
+  }
+
+  clearTiles() {
+    for (const { canvas, context } of this.tiles) context.clearRect(0, 0, canvas.width, canvas.height);
   }
 
   startFrameLoop() {

@@ -28,6 +28,11 @@
             "format": "at-uri",
             "description": "Optional place.stream.video record used as the default 4×3 mosaic."
           },
+          "videoStartMs": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Replay timestamp represented by time zero in the optional mosaic video."
+          },
           "recordedAt": {
             "type": "string",
             "format": "datetime",

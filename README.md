@@ -252,15 +252,19 @@ To synchronize and build a composite:
    source.
 5. Click **Generate FFmpeg command**, copy it, and run it in PowerShell from the
    directory containing the twelve source files. The generated H.264 MP4 is
-   `big-replay-4x3-synced.mp4`; FFmpeg refuses to overwrite an existing file.
+   `big-replay-4x3-synced.mp4`; FFmpeg refuses to overwrite an existing file. The
+   generator also fills **Mosaic starts at replay** with the timestamp represented
+   by video time zero.
 
 Command generation requires twelve unique player names whose first words are
-`P1` through `P12`. It pads late-starting recordings with black, trims recordings
-that begin before replay time zero, preserves each video's aspect ratio, and holds
-its last frame if it finishes before the replay.
+`P1` through `P12`. It starts the output at the first replay timestamp where every
+source has video, trims each input to that common point, preserves each video's
+aspect ratio, and holds its last frame if it finishes before the replay. This
+removes the long black pre-roll.
 
-For a finished composite, video time zero corresponds to replay time zero. Scrubbing
-seeks the composite to the selected frame timestamp. If a test clip ends before the
+For a finished composite, **Mosaic starts at replay** maps video time zero back to
+the replay timeline. Scrubbing before that timestamp shows empty tiles; later
+timestamps seek to `replay time − mosaic start`. If a test clip ends before the
 replay, its last frame remains visible while the replay continues.
 
 The sidebar groups Map display, Player video, Player names & colors, Tower progress,
@@ -273,13 +277,14 @@ dropdown and marker legend.
 
 Sign in under **Share** with an Atmosphere account (such as Bluesky) to publish a
 replay you have opened. Sign-in happens in a popup, so the open replay stays put.
-**Share this replay…** asks for a title, optional description, and optional
-`at://<did>/place.stream.video/<rkey>` reference. It then uploads the replay file
-as a blob to your PDS and creates a `com.iameli.bigWalk.replay` record (see
-`lexicons/`). When the video reference is present, viewers use it as the default
-mosaic but can still choose a local replacement. Shared replays are public: anyone
-with the link can watch them, including every player's recorded Steam name. Many
-PDSes limit blobs to 50 MB.
+**Share this replay…** asks for a title, optional description, optional
+`at://<did>/place.stream.video/<rkey>` reference, and the mosaic's replay start
+time. It then uploads the replay file as a blob to your PDS and creates a
+`com.iameli.bigWalk.replay` record (see `lexicons/`). When the video reference is
+present, viewers use it and its persisted `videoStartMs` as the default mosaic
+timeline, but can still choose a local replacement. Shared replays are public:
+anyone with the link can watch them, including every player's recorded Steam name.
+Many PDSes limit blobs to 50 MB.
 
 Links look like `https://big-replay.iame.li/<did>/<rkey>`. A handle also works in
 place of the DID. Static servers that cannot route those paths can put the same
