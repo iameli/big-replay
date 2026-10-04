@@ -230,11 +230,24 @@ too. Dividers also accept arrow keys when focused. Narrow panes stack the map ab
 the videos. At least one view remains selected. Clicking a player marker on the
 map adds that player's camera to the current layout.
 
-Enter a name and choose **Save layout** to preserve the current combination and
-divider sizes in this browser. Saved layouts can be recalled in one click, replaced
-by saving the same name again, or deleted with their × button. Player slots are
-stored as P1–P12 positions so a layout can be reused with another canonically named
-replay. Existing saved layouts without sizes still work.
+Two optional presentation modes can be enabled independently:
+
+- **Square videos** keeps camera tiles square and center-crops their video, including
+  while dividers are resized. Double-click a tile or press Shift+Enter on it to
+  maximize that player in the original aspect ratio. **Restore layout** or Escape
+  returns to the previous selection and sizing.
+- **Videos on map** draws a live square camera thumbnail above every located
+  player's marker, even if that player's main-pane feed is not selected. Nearby
+  thumbnails spread apart with colored connectors to their markers. Click a
+  thumbnail to add that player's feed without removing the current selection.
+
+
+Enter a name and choose **Save layout** to preserve the current combination,
+divider sizes, and presentation modes in this browser. Saved layouts can be recalled
+in one click, replaced by saving the same name again, or deleted with their × button.
+Player slots are stored as P1–P12 positions so a layout can be reused with another
+canonically named replay. Existing saved layouts without sizes or modes still work.
+Maximizing a player is temporary and does not change the saved multi-view layout.
 
 For normal playback, a shared replay's optional `video` AT-URI loads its
 `place.stream.video` record as the default mosaic through Streamplace's HLS

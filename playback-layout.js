@@ -41,6 +41,40 @@ function normalizePlaybackSizing(value) {
   return { mapFraction, tracks };
 }
 
+function normalizePlaybackModes(value) {
+  return { squareVideos: value?.squareVideos === true, mapCameras: value?.mapCameras === true };
+}
+
+function placeMapCameras(cameras, width, height, size = 56) {
+  const placed = [];
+  const step = size + 8;
+  const maxLeft = Math.max(0, width - size), maxTop = Math.max(0, height - size);
+  for (const camera of cameras) {
+    const originLeft = camera.x - size / 2, originTop = camera.y - size - 24;
+    let left = Math.min(maxLeft, Math.max(0, originLeft));
+    let top = Math.min(maxTop, Math.max(0, originTop));
+    let found = false;
+    for (let ring = 0; ring <= cameras.length && !found; ring++) {
+      for (let dy = -ring; dy <= ring && !found; dy++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+          const candidateLeft = Math.min(maxLeft, Math.max(0, originLeft + dx * step));
+          const candidateTop = Math.min(maxTop, Math.max(0, originTop + dy * step));
+          if (placed.some(other => candidateLeft < other.left + size + 4 &&
+              candidateLeft + size + 4 > other.left && candidateTop < other.top + size + 4 &&
+              candidateTop + size + 4 > other.top)) continue;
+          left = candidateLeft;
+          top = candidateTop;
+          found = true;
+          break;
+        }
+      }
+    }
+    placed.push({ ...camera, left, top, size });
+  }
+  return placed;
+}
+
 function normalizeSavedLayouts(value) {
   if (!Array.isArray(value)) return [];
   const layouts = [];
@@ -50,6 +84,7 @@ function normalizeSavedLayouts(value) {
     const layout = {
       name, selection: normalizePlaybackSelection(candidate.selection),
       sizing: normalizePlaybackSizing(candidate.sizing),
+      modes: normalizePlaybackModes(candidate.modes),
     };
     const existing = layouts.findIndex(saved => saved.name === name);
     if (existing >= 0) layouts.splice(existing, 1);
@@ -95,20 +130,25 @@ class PlaybackLayoutState {
     this.selection = ["map"];
     this.savedLayouts = normalizeSavedLayouts(savedLayouts);
     this.sizing = normalizePlaybackSizing();
+    this.modes = normalizePlaybackModes();
+    this.maximizedPlayer = null;
   }
 
   setPlayerCount(playerCount) {
     this.playerCount = playbackPlayerCount(playerCount);
     this.selection = normalizePlaybackSelection(this.selection, this.playerCount);
+    if (!this.selection.includes(this.maximizedPlayer)) this.maximizedPlayer = null;
   }
 
   setSelection(selection) {
     this.selection = normalizePlaybackSelection(selection, this.playerCount);
+    this.maximizedPlayer = null;
   }
 
   showMosaicDefault() {
     this.selection = PLAYBACK_LAYOUT_KEYS.slice(0, this.playerCount + 1);
     this.sizing = normalizePlaybackSizing();
+    this.maximizedPlayer = null;
   }
 
   toggle(key) {
@@ -121,6 +161,7 @@ class PlaybackLayoutState {
       this.selection = PLAYBACK_LAYOUT_KEYS.filter(candidate =>
         candidate === key || this.selection.includes(candidate));
     }
+    this.maximizedPlayer = null;
     return true;
   }
 
@@ -132,12 +173,19 @@ class PlaybackLayoutState {
     return true;
   }
 
+  maximizePlayer(index) {
+    if (!Number.isInteger(index) || index < 0 || index >= this.playerCount) return false;
+    this.maximizedPlayer = playerLayoutKey(index);
+    return true;
+  }
+
   save(name) {
     const trimmed = typeof name === "string" ? name.trim() : "";
     if (!trimmed) throw new Error("Enter a layout name.");
     const saved = {
       name: trimmed, selection: [...this.selection],
       sizing: normalizePlaybackSizing(this.sizing),
+      modes: normalizePlaybackModes(this.modes),
     };
     const existing = this.savedLayouts.findIndex(layout => layout.name === trimmed);
     if (existing >= 0) this.savedLayouts.splice(existing, 1);
@@ -150,6 +198,7 @@ class PlaybackLayoutState {
     if (!saved) return false;
     this.setSelection(saved.selection);
     this.sizing = normalizePlaybackSizing(saved.sizing);
+    this.modes = normalizePlaybackModes(saved.modes);
     return true;
   }
 
@@ -187,22 +236,51 @@ class PlaybackLayoutRenderer {
     const height = mixed && vertical
       ? (this.root.clientHeight - 32) * (1 - this.state.sizing.mapFraction)
       : this.root.clientHeight - 24;
-    const shape = playbackGridShape(tiles.length, width, height);
+    const square = this.state.modes.squareVideos && !this.state.maximizedPlayer;
+    this.videoGrid.dataset.square = String(square);
+    const shape = playbackGridShape(tiles.length, width, height, 8, square ? 1 : 16 / 9);
     this.applyTracks(shape);
     for (const tile of this.videoGrid.querySelectorAll(".video-tile")) {
       tile.style.gridRow = "";
       tile.style.gridColumn = "";
     }
-    if (tiles.length && shape.leadRows > 1) tiles[0].style.gridRow = `span ${shape.leadRows}`;
-    else if (tiles.length && shape.trailingColumns > 1) {
+    if (!square && tiles.length && shape.leadRows > 1) tiles[0].style.gridRow = `span ${shape.leadRows}`;
+    else if (!square && tiles.length && shape.trailingColumns > 1) {
       tiles.at(-1).style.gridColumn = `span ${shape.trailingColumns}`;
     }
-    const signature = `${mixed}:${vertical}:${shape.columns}:${shape.rows}:${tiles.length}`;
+    if (square) {
+      shape.leadRows = 1;
+      shape.trailingColumns = 1;
+    }
+    this.fitCameraTiles();
+    const signature = `${mixed}:${vertical}:${shape.columns}:${shape.rows}:${tiles.length}:${square}`;
     if (signature !== this.signature && !this.dragging) {
       this.signature = signature;
       this.rebuildDividers(mixed, vertical, shape);
     }
     this.positionDividers();
+  }
+
+  fitCameraTiles() {
+    const square = this.state.modes.squareVideos && !this.state.maximizedPlayer;
+    const tiles = [...this.videoGrid.querySelectorAll(".video-tile:not([hidden])")];
+    for (const tile of this.videoGrid.querySelectorAll(".video-tile")) {
+      tile.style.width = "";
+      tile.style.height = "";
+      tile.style.justifySelf = "";
+      tile.style.alignSelf = "";
+    }
+    if (!square) return;
+    const sizes = tiles.map(tile => {
+      const box = tile.getBoundingClientRect();
+      return Math.max(0, Math.min(box.width, box.height));
+    });
+    tiles.forEach((tile, index) => {
+      tile.style.width = `${sizes[index]}px`;
+      tile.style.height = `${sizes[index]}px`;
+      tile.style.justifySelf = "center";
+      tile.style.alignSelf = "center";
+    });
   }
 
   applySplit(mixed, vertical) {
@@ -262,6 +340,7 @@ class PlaybackLayoutRenderer {
         this.state.sizing.tracks[kind + count] = weights;
         this.applyTracks(shape);
       }
+      this.fitCameraTiles();
       this.positionDividers();
       this.redrawMap();
     };

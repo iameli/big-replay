@@ -157,6 +157,9 @@
   .video-tile:focus-visible { outline: 2px solid #56b4ff; outline-offset: 2px; }
   .video-tile.selected { border-color: #56b4ff; }
   .video-tile canvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #090b0f; }
+  #video-grid[data-square=true] .video-tile canvas { object-fit: cover; }
+  #restore-layout { position: absolute; z-index: 4; top: 20px; left: 20px; }
+  .layout-mode { display: block; margin: 8px 0; }
   .video-tile span { position: absolute; left: 4px; right: 4px; bottom: 4px; overflow: hidden; padding: 2px 4px; background: #10131acc; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
   #source-player { width: 100%; margin: 4px 0; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; }
   #source-video { display: block; width: 100%; margin-top: 6px; aspect-ratio: 16 / 9; background: #090b0f; }
@@ -201,6 +204,7 @@
     </div>
     <div id="video-grid" aria-label="Player camera views"></div>
   </div>
+  <button id="restore-layout" class="btn" type="button" hidden>Restore layout · Esc</button>
 </div>
 
 <div id="sidebar">
@@ -236,6 +240,9 @@
         <button class="btn" type="button" data-layout-key="p11" aria-pressed="false" disabled>P11</button>
         <button class="btn" type="button" data-layout-key="p12" aria-pressed="false" disabled>P12</button>
       </div>
+      <label class="layout-mode"><input id="square-videos" type="checkbox"> Square videos</label>
+      <label class="layout-mode"><input id="map-cameras" type="checkbox"> Videos on map</label>
+      <p>Double-click a camera or press Shift+Enter to maximize it. Map video squares add that player's view when clicked.</p>
       <form id="layout-save-form">
         <input id="layout-name" type="text" maxlength="60" placeholder="Layout name" aria-label="Layout name" required>
         <button class="btn" type="submit">Save layout</button>
@@ -532,6 +539,7 @@ const layoutButtons = [...document.querySelectorAll("#layout-picker [data-layout
 const layoutPlayerButtons = layoutButtons.filter(button => button.dataset.layoutKey !== "map");
 const layoutStatus = document.getElementById("layout-status");
 const mosaicStartInput = document.getElementById("mosaic-start");
+let mapCameraViews = [];
 function setMosaicStartTime(seconds, updatePlayback = true) {
   const value = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
   mosaicStartInput.value = value.toFixed(3);
@@ -549,6 +557,7 @@ const mosaicVideo = new MosaicVideo(
   document.getElementById("video-status"),
   selectVideoPlayer,
 );
+mosaicVideo.onFrame = drawMapCameraFrames;
 const playbackLayoutRenderer = new PlaybackLayoutRenderer(
   playbackLayoutRoot, mapPanel, document.getElementById("video-grid"), playbackLayout, render,
 );
@@ -657,14 +666,18 @@ function updatePlaybackGrid() {
 
 function applyPlaybackLayout(message = "") {
   const selected = new Set(playbackLayout.selection);
-  mapPanel.hidden = !selected.has("map");
+  const displayed = playbackLayout.maximizedPlayer ? new Set([playbackLayout.maximizedPlayer]) : selected;
+  mapPanel.hidden = !displayed.has("map");
   mosaicVideo.setVisibleIndices(
     Array.from({ length: playbackLayout.playerCount }, (_, index) => index)
-      .filter(index => selected.has(playerLayoutKey(index))),
+      .filter(index => displayed.has(playerLayoutKey(index))),
   );
   for (const button of layoutButtons) {
     button.setAttribute("aria-pressed", String(selected.has(button.dataset.layoutKey)));
   }
+  document.getElementById("square-videos").checked = playbackLayout.modes.squareVideos;
+  document.getElementById("map-cameras").checked = playbackLayout.modes.mapCameras;
+  document.getElementById("restore-layout").hidden = !playbackLayout.maximizedPlayer;
   updatePlaybackGrid();
   layoutStatus.textContent = message || `${playbackSelectionLabel()} selected.`;
   if (!mapPanel.hidden) render();
@@ -726,6 +739,36 @@ function initializePlaybackLayoutControls() {
       applyPlaybackLayout();
     });
   }
+  for (const [id, mode] of [["square-videos", "squareVideos"], ["map-cameras", "mapCameras"]]) {
+    document.getElementById(id).addEventListener("change", event => {
+      playbackLayout.modes[mode] = event.target.checked;
+      applyPlaybackLayout();
+    });
+  }
+  for (let index = 0; index < mosaicVideo.tiles.length; index++) {
+    const button = mosaicVideo.tiles[index].button;
+    button.title = "Double-click to maximize · Shift+Enter";
+    const maximize = () => {
+      if (playbackLayout.maximizePlayer(index)) applyPlaybackLayout();
+    };
+    button.addEventListener("dblclick", maximize);
+    button.addEventListener("keydown", event => {
+      if (event.key === "Enter" && event.shiftKey) {
+        event.preventDefault();
+        maximize();
+      }
+    });
+  }
+  const restore = () => {
+    playbackLayout.maximizedPlayer = null;
+    applyPlaybackLayout();
+  };
+  document.getElementById("restore-layout").addEventListener("click", restore);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && playbackLayout.maximizedPlayer && !document.querySelector("dialog[open]")) {
+      restore();
+    }
+  });
   document.getElementById("layout-save-form").addEventListener("submit", event => {
     event.preventDefault();
     const input = document.getElementById("layout-name");
@@ -753,6 +796,16 @@ function selectVideoPlayer(netId, focus = true, updateSource = true) {
 
 function selectPlayerAt(x, y) {
   if (!replay || !mapView.transform || mapView.editing) return;
+  if (playbackLayout.modes.mapCameras) {
+    for (let index = mapCameraViews.length - 1; index >= 0; index--) {
+      const view = mapCameraViews[index];
+      if (x >= view.left && x <= view.left + view.size &&
+          y >= view.top && y <= view.top + view.size) {
+        selectVideoPlayer(view.netId);
+        return;
+      }
+    }
+  }
   let nearest = null, nearestDistance = 24;
   for (const player of frames[frameIdx].players) {
     if (!Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
@@ -1564,6 +1617,7 @@ function render() {
   if (mapView.deferRender()) return;
   size();
   mapView.draw(ctx, frameIdx, trailMode);
+  mapCameraViews = [];
   if (!replay || !mapView.transform || mapView.editing) return;
   const fr = frames[frameIdx];
   if (!fr) return;
@@ -1612,6 +1666,55 @@ function render() {
     const label = `${playerLabel(p.netId)}${p.drowsy ? " · sleepy" : ""}`;
     drawPlayerLabel(label, sx + 17, sy - 8, p.drowsy ? "#ffd447" : color);
   }
+  if (playbackLayout.modes.mapCameras && mosaicVideo.sourceKind) {
+    const cameras = [];
+    for (const player of fr.players) {
+      const index = mosaicVideo.playerIds.indexOf(player.netId);
+      if (index < 0 || !Number.isFinite(player.x) || !Number.isFinite(player.z)) continue;
+      const [x, y] = toScreen(player.x, player.z);
+      cameras.push({ netId: player.netId, index, x, y, color: playerColor(player.netId) });
+    }
+    mapCameraViews = placeMapCameras(cameras, canvas.clientWidth, Math.max(0, canvas.clientHeight - 52));
+    ctx.save();
+    ctx.lineWidth = 1;
+    for (const view of mapCameraViews) {
+      ctx.strokeStyle = view.color;
+      ctx.beginPath();
+      ctx.moveTo(view.x, view.y);
+      ctx.lineTo(view.left + view.size / 2, view.top + view.size / 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    drawMapCameraFrames();
+  }
+}
+
+function drawMapCameraFrames() {
+  if (!playbackLayout.modes.mapCameras || mapPanel.hidden || mapView.editing ||
+      mapView.zoomPreview || !mapCameraViews.length) return;
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.font = "bold 11px system-ui";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.lineWidth = 2;
+  for (const view of mapCameraViews) {
+    const source = mosaicVideo.tiles[view.index].canvas;
+    ctx.fillStyle = "#090b0f";
+    ctx.fillRect(view.left, view.top, view.size, view.size);
+    if (mosaicVideo.ready && mosaicVideo.targetTime >= mosaicVideo.timelineStart) {
+      const crop = Math.min(source.width, source.height);
+      ctx.drawImage(source, (source.width - crop) / 2, (source.height - crop) / 2, crop, crop,
+        view.left, view.top, view.size, view.size);
+    }
+    ctx.fillStyle = "#10131acc";
+    ctx.fillRect(view.left, view.top + view.size - 16, view.size, 16);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(`P${view.index + 1}`, view.left + 4, view.top + view.size - 4);
+    ctx.strokeStyle = view.color;
+    ctx.strokeRect(view.left, view.top, view.size, view.size);
+  }
+  ctx.restore();
 }
 
 // ---------- playback ----------

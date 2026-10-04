@@ -41,6 +41,7 @@ class MosaicVideo {
     this.loadToken = 0;
     this.timelineStart = 0;
     this.frameCallback = null;
+    this.onFrame = null;
 
     for (let index = 0; index < MosaicVideo.TILE_COUNT; index++) {
       const button = document.createElement("button");
@@ -297,10 +298,12 @@ class MosaicVideo {
         0, 0, tileWidth, tileHeight,
       );
     }
+    this.onFrame?.();
   }
 
   clearTiles() {
     for (const { canvas, context } of this.tiles) context.clearRect(0, 0, canvas.width, canvas.height);
+    this.onFrame?.();
   }
 
   startFrameLoop() {

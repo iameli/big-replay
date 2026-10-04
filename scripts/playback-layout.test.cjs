@@ -5,10 +5,10 @@ const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
 
 const {
-  PlaybackLayoutState, normalizePlaybackSelection, playbackGridColumns, playbackGridShape,
+  PlaybackLayoutState, normalizePlaybackSelection, playbackGridColumns, playbackGridShape, placeMapCameras,
 } = runInNewContext(
   readFileSync(join(__dirname, '../playback-layout.js'), 'utf8')
-    + '\n({ PlaybackLayoutState, normalizePlaybackSelection, playbackGridColumns, playbackGridShape })',
+    + '\n({ PlaybackLayoutState, normalizePlaybackSelection, playbackGridColumns, playbackGridShape, placeMapCameras })',
 );
 
 test('playback selections keep one available view and canonical player order', () => {
@@ -80,4 +80,42 @@ test('mosaic default exposes every camera and saved layouts retain independent s
   legacy.recall('Old layout');
   assert.deepEqual([...legacy.selection], ['map', 'p1']);
   assert.ok(legacy.sizing.mapFraction > 0.5 && legacy.sizing.mapFraction < 1);
+});
+
+test('saved camera modes survive reload and maximization preserves the previous layout', () => {
+  const state = new PlaybackLayoutState([], 12);
+  state.setSelection(['map', 'p2', 'p4']);
+  state.modes = { squareVideos: true, mapCameras: true };
+  assert.equal(state.maximizePlayer(3), true);
+  assert.equal(state.maximizedPlayer, 'p4');
+  assert.deepEqual([...state.selection], ['map', 'p2', 'p4']);
+  state.save('Square commentary');
+  const restored = new PlaybackLayoutState(JSON.parse(JSON.stringify(state.savedLayouts)), 12);
+  restored.recall('Square commentary');
+  assert.equal(restored.maximizedPlayer, null);
+  assert.equal(restored.modes.squareVideos, true);
+  assert.equal(restored.modes.mapCameras, true);
+  assert.deepEqual([...restored.selection], ['map', 'p2', 'p4']);
+  assert.equal(restored.maximizePlayer(12), false);
+  restored.maximizePlayer(3);
+  restored.toggle('p1');
+  assert.equal(restored.maximizedPlayer, null);
+});
+
+test('map cameras remain clickable and separated when players share a marker position', () => {
+  const cameras = Array.from({ length: 12 }, (_, index) => ({ index, x: 300, y: 250 }));
+  const placed = placeMapCameras(cameras, 800, 600);
+  for (let index = 0; index < placed.length; index++) {
+    const view = placed[index];
+    assert.equal(view.index, index);
+    assert.ok(view.left >= 0 && view.top >= 0);
+    assert.ok(view.left + view.size <= 800 && view.top + view.size <= 600);
+    for (let other = 0; other < index; other++) {
+      const previous = placed[other];
+      assert.ok(view.left >= previous.left + previous.size ||
+        previous.left >= view.left + view.size ||
+        view.top >= previous.top + previous.size ||
+        previous.top >= view.top + view.size);
+    }
+  }
 });
