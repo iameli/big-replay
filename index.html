@@ -39,7 +39,11 @@
   .replay-item a:hover, .replay-item a:focus-visible { background: #1c2330; outline: none; }
   .replay-item .when { display: block; font-size: 11px; color: #7d8ba0; }
   #canvaswrap { grid-column: 1; grid-row: 1; min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #172e3a; }
-  #playback-layout { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--layout-columns, 1), minmax(0, 1fr)); grid-template-rows: repeat(var(--layout-rows, 1), minmax(0, 1fr)); gap: 8px; padding: 12px; background: #090b0f; }
+  #playback-layout { position: absolute; inset: 0; display: grid; gap: 8px; padding: 12px; background: #090b0f; }
+  .layout-divider { position: absolute; z-index: 3; touch-action: none; user-select: none; border-radius: 4px; background: #313c52; }
+  .layout-divider:hover, .layout-divider:focus-visible { background: #56b4ff; outline: none; }
+  .column-divider { cursor: col-resize; }
+  .row-divider { cursor: row-resize; }
   #map-panel { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 2px solid #313c52; border-radius: 4px; background: #172e3a; }
   #map { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 0 0; }
   #sidebar { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; overflow-y: auto; border-left: 1px solid #232a36; background: #151a23; display: flex; flex-direction: column; }
@@ -147,7 +151,7 @@
   #video-picker, #source-video-picker { display: inline-block; margin: 2px 0 4px; }
   #mosaic-start-label { display: block; margin: 6px 0; color: #aab8cc; font-size: 11px; }
   #mosaic-start { width: 82px; margin: 0 3px; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; }
-  #video-grid { display: contents; }
+  #video-grid { display: grid; position: relative; min-width: 0; min-height: 0; gap: 8px; }
   .video-tile { position: relative; min-width: 0; min-height: 0; padding: 0; overflow: hidden; border: 2px solid #313c52; border-radius: 4px; background: #090b0f; color: #fff; cursor: pointer; }
   .video-tile:hover { border-color: #526675; }
   .video-tile:focus-visible { outline: 2px solid #56b4ff; outline-offset: 2px; }
@@ -545,6 +549,9 @@ const mosaicVideo = new MosaicVideo(
   document.getElementById("video-status"),
   selectVideoPlayer,
 );
+const playbackLayoutRenderer = new PlaybackLayoutRenderer(
+  playbackLayoutRoot, mapPanel, document.getElementById("video-grid"), playbackLayout, render,
+);
 const sourceVideoSync = new SourceVideoSync({
   video: document.getElementById("source-video"),
   playerSelect: document.getElementById("source-player"),
@@ -563,7 +570,12 @@ const sourceVideoSync = new SourceVideoSync({
 });
 document.getElementById("video-file").addEventListener("change", e => {
   if (!e.target.files[0]) return;
+  const firstMosaic = !mosaicVideo.sourceKind;
   mosaicVideo.load(e.target.files[0]);
+  if (firstMosaic) {
+    playbackLayout.showMosaicDefault();
+    applyPlaybackLayout();
+  }
 });
 const mapView = new MapView(canvas, render, () => setPlaying(false), playerColor, playerLabel, selectPlayerAt);
 initializePlaybackLayoutControls();
@@ -640,23 +652,7 @@ function playbackSelectionLabel(selection = playbackLayout.selection) {
 }
 
 function updatePlaybackGrid() {
-  const items = [
-    ...(!mapPanel.hidden ? [mapPanel] : []),
-    ...mosaicVideo.tiles.filter(tile => !tile.button.hidden).map(tile => tile.button),
-  ];
-  for (const item of [mapPanel, ...mosaicVideo.tiles.map(tile => tile.button)]) {
-    item.style.gridRow = "";
-    item.style.gridColumn = "";
-  }
-  const shape = playbackGridShape(
-    items.length,
-    Math.max(0, canvasWrap.clientWidth - 24),
-    Math.max(0, canvasWrap.clientHeight - 24),
-  );
-  playbackLayoutRoot.style.setProperty("--layout-columns", shape.columns);
-  playbackLayoutRoot.style.setProperty("--layout-rows", shape.rows);
-  if (shape.leadRows > 1) items[0].style.gridRow = `span ${shape.leadRows}`;
-  else if (shape.trailingColumns > 1) items.at(-1).style.gridColumn = `span ${shape.trailingColumns}`;
+  playbackLayoutRenderer.update();
 }
 
 function applyPlaybackLayout(message = "") {
@@ -978,6 +974,10 @@ async function parseBuffer(buf, name, sharedReplay = null) {
   updatePlaybackStart(false);
   frameIdx = playbackStartFrame;
   preparePlayers();
+  if (streamplaceVideoUri(shared?.record.video)) {
+    playbackLayout.showMosaicDefault();
+    applyPlaybackLayout();
+  }
   receptacles.setReplay(frames);
   receptacleFrame = -1;
   mapView.setReplay(frames);

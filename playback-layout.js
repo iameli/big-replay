@@ -27,13 +27,30 @@ function normalizePlaybackSelection(selection, playerCount = 12) {
   return normalized.length ? normalized : ["map"];
 }
 
+function normalizePlaybackSizing(value) {
+  const mapFraction = Number.isFinite(value?.mapFraction)
+    ? Math.min(0.9, Math.max(0.1, value.mapFraction)) : 0.65;
+  const tracks = {};
+  for (const [key, weights] of Object.entries(value?.tracks || {})) {
+    if (!/^[cr][1-9]\d?$/.test(key) || !Array.isArray(weights) ||
+        weights.length !== Number(key.slice(1)) ||
+        !weights.every(weight => Number.isFinite(weight) && weight > 0)) continue;
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    if (Number.isFinite(total)) tracks[key] = weights.map(weight => weight / total);
+  }
+  return { mapFraction, tracks };
+}
+
 function normalizeSavedLayouts(value) {
   if (!Array.isArray(value)) return [];
   const layouts = [];
   for (const candidate of value) {
     const name = typeof candidate?.name === "string" ? candidate.name.trim() : "";
     if (!name) continue;
-    const layout = { name, selection: normalizePlaybackSelection(candidate.selection) };
+    const layout = {
+      name, selection: normalizePlaybackSelection(candidate.selection),
+      sizing: normalizePlaybackSizing(candidate.sizing),
+    };
     const existing = layouts.findIndex(saved => saved.name === name);
     if (existing >= 0) layouts.splice(existing, 1);
     layouts.push(layout);
@@ -77,6 +94,7 @@ class PlaybackLayoutState {
     this.playerCount = playbackPlayerCount(playerCount);
     this.selection = ["map"];
     this.savedLayouts = normalizeSavedLayouts(savedLayouts);
+    this.sizing = normalizePlaybackSizing();
   }
 
   setPlayerCount(playerCount) {
@@ -86,6 +104,11 @@ class PlaybackLayoutState {
 
   setSelection(selection) {
     this.selection = normalizePlaybackSelection(selection, this.playerCount);
+  }
+
+  showMosaicDefault() {
+    this.selection = PLAYBACK_LAYOUT_KEYS.slice(0, this.playerCount + 1);
+    this.sizing = normalizePlaybackSizing();
   }
 
   toggle(key) {
@@ -112,7 +135,10 @@ class PlaybackLayoutState {
   save(name) {
     const trimmed = typeof name === "string" ? name.trim() : "";
     if (!trimmed) throw new Error("Enter a layout name.");
-    const saved = { name: trimmed, selection: [...this.selection] };
+    const saved = {
+      name: trimmed, selection: [...this.selection],
+      sizing: normalizePlaybackSizing(this.sizing),
+    };
     const existing = this.savedLayouts.findIndex(layout => layout.name === trimmed);
     if (existing >= 0) this.savedLayouts.splice(existing, 1);
     this.savedLayouts.push(saved);
@@ -123,6 +149,7 @@ class PlaybackLayoutState {
     const saved = this.savedLayouts.find(layout => layout.name === name);
     if (!saved) return false;
     this.setSelection(saved.selection);
+    this.sizing = normalizePlaybackSizing(saved.sizing);
     return true;
   }
 
@@ -131,5 +158,199 @@ class PlaybackLayoutState {
     if (index < 0) return false;
     this.savedLayouts.splice(index, 1);
     return true;
+  }
+}
+
+// Separate the map from the camera grid so its size never depends on camera count.
+class PlaybackLayoutRenderer {
+  constructor(root, mapPanel, videoGrid, state, redrawMap) {
+    this.root = root;
+    this.mapPanel = mapPanel;
+    this.videoGrid = videoGrid;
+    this.state = state;
+    this.redrawMap = redrawMap;
+    this.dividers = [];
+    this.signature = "";
+    this.dragging = false;
+  }
+
+  update() {
+    const tiles = [...this.videoGrid.querySelectorAll(".video-tile:not([hidden])")];
+    const mixed = !this.mapPanel.hidden && tiles.length > 0;
+    const vertical = this.root.clientWidth < 650;
+    this.root.dataset.split = mixed ? (vertical ? "vertical" : "horizontal") : "single";
+    this.videoGrid.hidden = tiles.length === 0;
+    this.applySplit(mixed, vertical);
+    const width = mixed && !vertical
+      ? (this.root.clientWidth - 32) * (1 - this.state.sizing.mapFraction)
+      : this.root.clientWidth - 24;
+    const height = mixed && vertical
+      ? (this.root.clientHeight - 32) * (1 - this.state.sizing.mapFraction)
+      : this.root.clientHeight - 24;
+    const shape = playbackGridShape(tiles.length, width, height);
+    this.applyTracks(shape);
+    for (const tile of this.videoGrid.querySelectorAll(".video-tile")) {
+      tile.style.gridRow = "";
+      tile.style.gridColumn = "";
+    }
+    if (tiles.length && shape.leadRows > 1) tiles[0].style.gridRow = `span ${shape.leadRows}`;
+    else if (tiles.length && shape.trailingColumns > 1) {
+      tiles.at(-1).style.gridColumn = `span ${shape.trailingColumns}`;
+    }
+    const signature = `${mixed}:${vertical}:${shape.columns}:${shape.rows}:${tiles.length}`;
+    if (signature !== this.signature && !this.dragging) {
+      this.signature = signature;
+      this.rebuildDividers(mixed, vertical, shape);
+    }
+    this.positionDividers();
+  }
+
+  applySplit(mixed, vertical) {
+    const fraction = this.state.sizing.mapFraction;
+    this.root.style.gridTemplateColumns = mixed && !vertical
+      ? `minmax(0, ${fraction}fr) minmax(0, ${1 - fraction}fr)` : "minmax(0, 1fr)";
+    this.root.style.gridTemplateRows = mixed && vertical
+      ? `minmax(0, ${fraction}fr) minmax(0, ${1 - fraction}fr)` : "minmax(0, 1fr)";
+  }
+
+  weights(axis, count) {
+    return this.state.sizing.tracks[axis + count] || Array(count).fill(1 / count);
+  }
+
+  applyTracks(shape) {
+    this.videoGrid.style.gridTemplateColumns = this.weights("c", shape.columns)
+      .map(weight => `minmax(0, ${weight}fr)`).join(" ");
+    this.videoGrid.style.gridTemplateRows = this.weights("r", shape.rows)
+      .map(weight => `minmax(0, ${weight}fr)`).join(" ");
+  }
+
+  rebuildDividers(mixed, vertical, shape) {
+    for (const divider of this.dividers) divider.element.remove();
+    this.dividers = [];
+    if (mixed) this.addDivider("map", vertical ? "y" : "x", 0, 2, shape);
+    for (let index = 0; index < shape.columns - 1; index++) {
+      this.addDivider("c", "x", index, shape.columns, shape);
+    }
+    for (let index = 0; index < shape.rows - 1; index++) {
+      this.addDivider("r", "y", index, shape.rows, shape);
+    }
+  }
+
+  addDivider(kind, axis, index, count, shape) {
+    const element = document.createElement("div");
+    element.className = `layout-divider ${axis === "x" ? "column-divider" : "row-divider"}`;
+    element.tabIndex = 0;
+    element.setAttribute("role", "separator");
+    element.setAttribute("aria-orientation", axis === "x" ? "vertical" : "horizontal");
+    element.setAttribute("aria-label", kind === "map" ? "Resize map and videos"
+      : `Resize video ${kind === "c" ? "columns" : "rows"} ${index + 1} and ${index + 2}`);
+    element.setAttribute("aria-valuemin", "10");
+    element.setAttribute("aria-valuemax", "90");
+    const divider = { element, kind, axis, index, count, shape };
+    this.dividers.push(divider);
+    this.root.append(element);
+    const resize = value => {
+      const fraction = Math.min(0.9, Math.max(0.1, value));
+      if (kind === "map") {
+        this.state.sizing.mapFraction = fraction;
+        this.applySplit(true, axis === "y");
+      } else {
+        const weights = [...this.weights(kind, count)];
+        const pair = weights[index] + weights[index + 1];
+        weights[index] = pair * fraction;
+        weights[index + 1] = pair * (1 - fraction);
+        this.state.sizing.tracks[kind + count] = weights;
+        this.applyTracks(shape);
+      }
+      this.positionDividers();
+      this.redrawMap();
+    };
+    element.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      element.setPointerCapture(event.pointerId);
+      this.dragging = true;
+      const rect = (kind === "map" ? this.root : this.videoGrid).getBoundingClientRect();
+      const weights = this.weights(kind, count);
+      const offset = kind === "map" ? 12
+        : weights.slice(0, index).reduce((sum, weight) => sum + weight, 0)
+          * ((axis === "x" ? rect.width : rect.height) - 8 * (count - 1)) + 8 * index;
+      const extent = kind === "map" ? (axis === "x" ? rect.width : rect.height) - 32
+        : (weights[index] + weights[index + 1])
+          * ((axis === "x" ? rect.width : rect.height) - 8 * (count - 1));
+      const move = event => {
+        const coordinate = axis === "x" ? event.clientX - rect.left : event.clientY - rect.top;
+        resize((coordinate - offset - 4) / Math.max(1, extent));
+      };
+      const finish = () => {
+        element.removeEventListener("pointermove", move);
+        element.removeEventListener("pointerup", finish);
+        element.removeEventListener("pointercancel", finish);
+        element.removeEventListener("lostpointercapture", finish);
+        this.dragging = false;
+        this.update();
+        this.redrawMap();
+      };
+      element.addEventListener("pointermove", move);
+      element.addEventListener("pointerup", finish);
+      element.addEventListener("pointercancel", finish);
+      element.addEventListener("lostpointercapture", finish);
+    });
+    element.addEventListener("keydown", event => {
+      const decrease = axis === "x" ? "ArrowLeft" : "ArrowUp";
+      const increase = axis === "x" ? "ArrowRight" : "ArrowDown";
+      if (event.key !== decrease && event.key !== increase) return;
+      event.preventDefault();
+      const weights = this.weights(kind, count);
+      const current = kind === "map" ? this.state.sizing.mapFraction
+        : weights[index] / (weights[index] + weights[index + 1]);
+      resize(current + (event.key === increase ? 0.05 : -0.05));
+      this.update();
+    });
+  }
+
+  positionDividers() {
+    const root = this.root.getBoundingClientRect();
+    const grid = this.videoGrid.getBoundingClientRect();
+    for (const { element, kind, axis, index, count, shape } of this.dividers) {
+      let left, top, width, height, fraction;
+      if (kind === "map") {
+        const map = this.mapPanel.getBoundingClientRect();
+        fraction = this.state.sizing.mapFraction;
+        left = axis === "x" ? map.right - root.left : 12;
+        top = axis === "y" ? map.bottom - root.top : 12;
+        width = axis === "x" ? 8 : root.width - 24;
+        height = axis === "y" ? 8 : root.height - 24;
+      } else {
+        const weights = this.weights(kind, count);
+        const before = weights.slice(0, index + 1).reduce((sum, weight) => sum + weight, 0);
+        fraction = weights[index] / (weights[index] + weights[index + 1]);
+        left = grid.left - root.left;
+        top = grid.top - root.top;
+        width = grid.width;
+        height = grid.height;
+        if (axis === "x") {
+          left += before * (grid.width - 8 * (count - 1)) + 8 * index;
+          width = 8;
+          if (shape.trailingColumns > 1) {
+            const rows = this.weights("r", shape.rows);
+            height -= rows.at(-1) * (grid.height - 8 * (shape.rows - 1)) + 8;
+          }
+        } else {
+          top += before * (grid.height - 8 * (count - 1)) + 8 * index;
+          height = 8;
+          if (shape.leadRows > 1) {
+            const offset = this.weights("c", shape.columns)[0]
+              * (grid.width - 8 * (shape.columns - 1)) + 8;
+            left += offset;
+            width -= offset;
+          }
+        }
+      }
+      Object.assign(element.style, {
+        left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`,
+      });
+      element.setAttribute("aria-valuenow", String(Math.round(fraction * 100)));
+    }
   }
 }

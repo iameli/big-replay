@@ -57,3 +57,27 @@ test('responsive grid maximizes sixteen-by-nine view size', () => {
     { columns: 2, rows: 2, leadRows: 2, trailingColumns: 1 },
   );
 });
+
+test('mosaic default exposes every camera and saved layouts retain independent sizing', () => {
+  const state = new PlaybackLayoutState([], 12);
+  state.showMosaicDefault();
+  assert.deepEqual([...state.selection], ['map', ...Array.from({ length: 12 }, (_, i) => `p${i + 1}`)]);
+  state.sizing.mapFraction = 0.25;
+  state.sizing.tracks.c2 = [0.3, 0.7];
+  state.save('Big cameras');
+  state.sizing.tracks.c2[0] = 0.9;
+  state.showMosaicDefault();
+  state.recall('Big cameras');
+  assert.equal(state.sizing.mapFraction, 0.25);
+  assert.deepEqual([...state.sizing.tracks.c2], [0.3, 0.7]);
+
+  const reloaded = new PlaybackLayoutState(JSON.parse(JSON.stringify(state.savedLayouts)), 12);
+  reloaded.recall('Big cameras');
+  assert.equal(reloaded.sizing.mapFraction, 0.25);
+  assert.deepEqual([...reloaded.sizing.tracks.c2], [0.3, 0.7]);
+
+  const legacy = new PlaybackLayoutState([{ name: 'Old layout', selection: ['map', 'p1'] }], 12);
+  legacy.recall('Old layout');
+  assert.deepEqual([...legacy.selection], ['map', 'p1']);
+  assert.ok(legacy.sizing.mapFraction > 0.5 && legacy.sizing.mapFraction < 1);
+});

@@ -219,15 +219,22 @@ section.
 ### Player video
 
 The open **Playback layout** sidebar section has a Map button and P1–P12 buttons
-in a 4-column × 3-row player grid. Select any combination; the main pane arranges
-the chosen map and camera views into a responsive grid that maximizes their usable
-size. At least one view remains selected. Clicking a player marker on the map adds
-that player's camera to the current layout.
+in a 4-column × 3-row player grid. Replays with a mosaic video automatically show
+all player cameras beside a large map, initially using 65% of the main pane for
+the map. Replays without video start map-only. Choosing the first local mosaic
+also reveals all cameras; replacing an existing mosaic preserves your layout.
 
-Enter a name and choose **Save layout** to preserve the current combination in
-this browser. Saved layouts can be recalled in one click, replaced by saving the
-same name again, or deleted with their × button. Player slots are stored as
-P1–P12 positions so a layout can be reused with another canonically named replay.
+Select any combination of map and cameras. Drag the divider between the map and
+videos to give either side more space; camera row and column dividers are draggable
+too. Dividers also accept arrow keys when focused. Narrow panes stack the map above
+the videos. At least one view remains selected. Clicking a player marker on the
+map adds that player's camera to the current layout.
+
+Enter a name and choose **Save layout** to preserve the current combination and
+divider sizes in this browser. Saved layouts can be recalled in one click, replaced
+by saving the same name again, or deleted with their × button. Player slots are
+stored as P1–P12 positions so a layout can be reused with another canonically named
+replay. Existing saved layouts without sizes still work.
 
 For normal playback, a shared replay's optional `video` AT-URI loads its
 `place.stream.video` record as the default mosaic through Streamplace's HLS
