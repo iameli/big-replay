@@ -23,7 +23,22 @@ separate executable: it never patches the game and never writes to it — it rea
 | `Launcher / Enabled`      | `true`  | Start Big Replay alongside the game.                   |
 | `Launcher / GraceSeconds` | `25`    | Seconds after the game exits before Big Replay closes. |
 
+The launcher only ever runs the payload shipped in this package
+(`<profile>/BigReplay/BigReplay.exe`). There is deliberately no executable-path setting: BepInEx
+configs get shared between users, and a path entry would let a shared config point the launcher
+at an arbitrary program.
+
+## Troubleshooting
+
+- **The game crashed on the very first modded launch** — BepInEx is generating its IL2CPP
+  interop assemblies (normally a several-minute, seemingly-frozen first launch). Launch again to
+  retry, or copy a working `BepInEx/interop` folder from another profile. After it succeeds,
+  launches are fast and stable.
+- **Big Replay didn't open** — check `BepInEx/config/com.bigwalk.replaylauncher.cfg` (`Enabled`)
+  and `BepInEx/LogOutput.log` for a `Started Big Replay` line.
+
 ## Links
 
 - Source, standalone downloads, docs: <https://github.com/iameli/big-replay>
 - Replay viewer: <https://big-replay.iame.li/>
+- Trust notes (read-only, no game writes): <https://github.com/iameli/big-replay/blob/next/docs/trust.md>

@@ -23,7 +23,8 @@ Work in progress: read-only recorder with an automatic desktop UI + map-backed r
 - Windows x64. The self-contained desktop release needs no .NET installation.
 - .NET SDK 10 to build from source or run the CLI.
 - Big Walk (process name `Big Walk.exe`), running as the same user (no admin needed)
-- Recorder must run on the **host** machine (Mirror host sees all 12 player bodies + all gourd state)
+- Any player in the lobby can run the recorder — player, gourd and monument state is replicated
+  to every client, so a replay can be captured from any participant's machine
 
 ## Automatic recorder (Windows)
 

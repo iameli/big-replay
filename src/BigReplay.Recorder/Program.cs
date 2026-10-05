@@ -10,7 +10,7 @@ namespace BigReplay.Recorder;
 ///   probe   — attach, load manifest, print one live sample (validation)
 ///   record  — attach, sample at N Hz, write a replay file (Ctrl+C to stop)
 ///
-/// Run this on the HOST machine during a lobby.
+/// Run this on any player's machine during a lobby — every client has the full player/gourd state.
 /// </summary>
 internal static class Program
 {

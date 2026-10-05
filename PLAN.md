@@ -9,7 +9,7 @@ how the machinery works, and what a full-featured replay editor should be.
 For the 12-person routing group: after a hosted run, a replay file shows everyone's locations
 and status (backpacks, carried gourds, drowsiness) plus all gourd state and monument slots.
 Crucially: **no mods, no writes to the game** — speedrunners must be able to trust it. The
-recorder attaches to the host's running game and is 100% `ReadProcessMemory` from attach to exit.
+recorder attaches to any player's running game (state is replicated to every client) and is 100% `ReadProcessMemory` from attach to exit.
 
 ## What works today (live-verified 2026-09-24)
 
@@ -108,13 +108,13 @@ manifest.json                    # generated for build 24982892 (1.5.1 260827153
 dotnet run --project src\BigReplay.ManifestGen -- "C:\Program Files (x86)\Steam\steamapps\common\Big Walk" manifest.json
 # probe a running game
 dotnet run --project src\BigReplay.Recorder -- probe manifest.json
-# record (host machine; Ctrl+C or -d N seconds)
+# record (any player's machine; Ctrl+C or -d N seconds)
 dotnet run --project src\BigReplay.Recorder -- record -d 120 -o run.replay.json.gz manifest.json
 # play back: open index.html and drop run.replay.json.gz (or ...?replay=/path.json.gz)
 ```
 
-Requires .NET SDK 10 (net10.0), Windows, Big Walk running as the same user. Recorder must run
-on the **host** (only the host sees all 12 bodies and the gourd state). No admin needed.
+Requires .NET SDK 10 (net10.0), Windows, Big Walk running as the same user. Any player in the
+lobby can run the recorder (player/gourd/monument state is replicated to every client). No admin needed.
 
 ## Gaps known today
 

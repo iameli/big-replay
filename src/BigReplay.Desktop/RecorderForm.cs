@@ -79,7 +79,7 @@ internal sealed class RecorderForm : Form
         buttons.Controls.Add(_openFolder);
         var hint = new Label
         {
-            Text = "Run this on the host's PC to capture all players.\nClosing this window finishes and saves the current replay.",
+            Text = "Run it on any player's PC in the lobby — every client has the full player and gourd state.\nClosing this window finishes and saves the current replay.",
             AutoSize = true, ForeColor = Color.FromArgb(85, 92, 104),
         };
         layout.Controls.Add(brand);

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2
+
+- Documentation correction: **any player in the lobby can run Big Replay** — player, gourd and
+  monument state is replicated to every client, so the recorder no longer needs to run on the
+  host. (Recorder window hint text updated to match.)
+- The Thunderstore package is now built in CI and attached to every GitHub release
+  (`Big_Replay-<version>.zip`), alongside the installer and portable zip.
+
 ## 0.1.1
 
 - Removed the launcher's executable-path config entry. BepInEx configs are shared as codes, so

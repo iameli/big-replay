@@ -31,8 +31,8 @@ memory probe takes. Pure reads cannot change game state.
 - Fixes the recorder to the game build pinned in the manifest (Big Walk 1.5.1,
   Steam buildid 24982892). After a Big Walk update, regenerate the manifest with
   `ManifestGen` (one command) and ship the new `manifest.json` with the recorder.
-- The recorder must run on the **host** machine during a lobby; the host is the only
-  side that sees all 12 player bodies and all gourd state.
+- Any player in the lobby can run the recorder: player, gourd and monument state is replicated
+  to every client, so the capture does not have to come from the host.
 
 ## Prior art
 
