@@ -201,3 +201,38 @@ no longer exist in 1.6.0, and the recorder does not use them).
 **After every game update** (release chores, not code changes): publish a payload/Thunderstore
 release (the package bundles this manifest), run `scripts/export-build-refs.ps1` and re-upload
 `build-refs.zip` to `practice-canary` for CI, and rebuild plugins against the new interop.
+
+### What 1.6.0 actually changed (diffed against a full 7z backup of 1.5.1)
+
+File-level: 240 files both sides, **none added or removed**; 234 of 236 same-size files are
+byte-identical (including the 847 MB `sharedassets2.resource`, `sharedassets1.resource`,
+`UnityPlayer.dll`, all of `dotnet/`, the EOS SDK). Only these differ:
+
+| file | 1.5.1 | 1.6.0 | note |
+| --- | --- | --- | --- |
+| `GameAssembly.dll` | 70,898,688 | 71,250,432 | +351,744 |
+| `global-metadata.dat` | 20,191,684 | 20,269,204 | +77,520 |
+| `data.unity3d` | 2,451,629,046 | 2,451,391,952 | −237,094, but **every 64 K block differs** |
+| `RuntimeInitializeOnLoads.json` | 10,626 | 11,268 | +642 |
+| `Plugins/x86_64/lib_burst_generated.dll`, `boot.config` | same size | same size | content differs |
+
+So the meaningful content delta is ~1.6 MB; the ~1 GB download is Steam re-fetching the
+2.34 GB `data.unity3d` bundle that Unity re-serialized wholesale. (Raw-string diffs of that
+bundle are useless for the same reason — a UnityFS TOC diff would be needed for per-asset
+detail.)
+
+Code-level: metadata name table 168,979 → 169,413 (**+600 names, −166**). The patch is a
+**lobby/rich-presence rework plus text chat and moderation**, not just UI:
+
+- world/lobby identity moved out of EOS rich presence (`NetworkworldName`, `OnSetWorldName`,
+  `RestoreRichPresence`, `richPresenceWorldAndCode`, `friendsCodes`) into Mirror lobby data
+  (`NetworklobbyData`, `WaitForLobbyAndSetData`, `OnSetLobbyData`, `OnLobbyListUpdated`,
+  literal “No lobby data creation function set, call SetLobbyDataCreationF…”);
+- moderation/griefing: `IsInLobbyRecoveryMode`, `DelayForceDisconnectGriefers`,
+  `DelayForceDisconnectGriefer`, plus the new `PlayerNetworking` fields `moderationName`,
+  `userPlatformId`, `userPlatformIdString`, `inGameBlockedUsers`;
+- text chat: `ServerSetText`, `ClearTextWrittenByAuthor`, `newAuthorIdentifier`, `ArmMuffle`,
+  `EchoCancellation`, asset strings `LobbyButton`, `ChatOutput`, `ChatRIdle`,
+  `HolsterTextChatAim`;
+- transport/auth hardening: `allowEmbeddedIPv4`, `IsStrictIPv4/IPv6`, `JoinInformationValid`,
+  `GetAuthedCredentials`, `ValidateAuth`.
