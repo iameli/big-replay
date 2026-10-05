@@ -75,6 +75,9 @@ foreach ($required in @($exe, $gameManifest)) {
     }
 }
 
+if (-not $PluginDll -or $PluginDll -notmatch '\.dll$') {
+    throw "PluginDll must point at a built plugin DLL (got '$PluginDll'); an empty or directory path would silently ship a package with no launcher."
+}
 $pluginDll = Resolve-RepoPath $PluginDll
 if (-not (Test-Path $pluginDll)) {
     $pluginProject = Resolve-RepoPath $PluginProject
