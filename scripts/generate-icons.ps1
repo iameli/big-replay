@@ -32,7 +32,7 @@ try {
 
     # Trim the browser canvas, retaining the full silhouette and both outlines.
     Convert-Image @($raster, '-trim', '+repage', $raster)
-    foreach ($size in @(192, 512)) {
+    foreach ($size in @(192, 256, 512)) {
         $inner = [int][Math]::Round($size * 0.9)
         Convert-Image @($raster, '-resize', "${inner}x${inner}", '-background', 'none',
             '-gravity', 'center', '-extent', "${size}x${size}", '-strip',

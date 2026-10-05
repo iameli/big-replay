@@ -21,9 +21,16 @@ internal sealed class RecorderForm : Form
     private string? _outputDirectory;
     private bool _closing;
     private bool _allowClose;
+    private readonly bool _exitWithGame;
+    private int? _gamePid;
+    private readonly int _graceSeconds;
+    private readonly CancellationTokenSource _lifetime = new();
 
-    public RecorderForm()
+    public RecorderForm(bool exitWithGame = false, int? gamePid = null, int graceSeconds = 25)
     {
+        _exitWithGame = exitWithGame;
+        _gamePid = gamePid;
+        _graceSeconds = graceSeconds;
         Text = "Big Replay";
         Icon = _appIcon;
         using (var logoIcon = new Icon(_appIcon, 128, 128))
@@ -32,6 +39,8 @@ internal sealed class RecorderForm : Form
         }
         Disposed += (_, _) =>
         {
+            _lifetime.Cancel();
+            _lifetime.Dispose();
             _logoBitmap.Dispose();
             _appIcon.Dispose();
         };
@@ -111,7 +120,14 @@ internal sealed class RecorderForm : Form
             }
         };
         _openFolder.Click += (_, _) => OpenFolder();
-        Shown += (_, _) => StartMonitoring();
+        Shown += (_, _) =>
+        {
+            StartMonitoring();
+            if (_exitWithGame)
+            {
+                _ = ExitWatcherAsync(_lifetime.Token);
+            }
+        };
     }
 
     private void StartMonitoring()
@@ -120,6 +136,112 @@ internal sealed class RecorderForm : Form
         _stop = new CancellationTokenSource();
         _pause.Text = "Pause recording";
         _runTask = MonitorAsync(_stop.Token);
+    }
+
+    /// <summary>
+    /// --exit-with-game: save and quit once the game is gone. Watches a specific pid when the
+    /// launcher supplied one (covers crashes, where no clean shutdown callback ever fires);
+    /// otherwise watches every "Big Walk" process by name. A relaunch within the grace period
+    /// cancels the shutdown.
+    /// </summary>
+    private async Task ExitWatcherAsync(CancellationToken token)
+    {
+        bool seen = false; // becomes true only once the game has actually been observed alive
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                bool alive = IsGameAlive();
+                if (alive)
+                {
+                    seen = true;
+                }
+                else if (!seen && _gamePid is not null)
+                {
+                    // The supplied pid was never alive for us (stale handoff): watch by process
+                    // name instead of treating it as "the game just exited".
+                    _gamePid = null;
+                    seen = AnyBigWalkRunning();
+                }
+                else if (seen)
+                {
+                    if (await GraceElapsedAsync(token))
+                    {
+                        RequestClose();
+                        return;
+                    }
+                    continue; // grace was interrupted by a relaunch
+                }
+
+                await Task.Delay(2000, token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // form is closing; nothing to do
+        }
+    }
+
+    private async Task<bool> GraceElapsedAsync(CancellationToken token)
+    {
+        for (int i = 0; i < _graceSeconds; i++)
+        {
+            await Task.Delay(1000, token);
+            if (IsGameAlive())
+            {
+                return false; // relaunched during the grace period
+            }
+        }
+        return true;
+    }
+
+    private bool IsGameAlive()
+    {
+        if (_gamePid is int pid)
+        {
+            try
+            {
+                using var process = Process.GetProcessById(pid);
+                return !process.HasExited;
+            }
+            catch (ArgumentException)
+            {
+                return false; // no such process: it exited (or crashed)
+            }
+        }
+        return AnyBigWalkRunning();
+    }
+
+    private static bool AnyBigWalkRunning()
+    {
+        var processes = Process.GetProcessesByName(GameProcess.ProcessName);
+        try
+        {
+            return processes.Length > 0;
+        }
+        finally
+        {
+            foreach (var process in processes)
+            {
+                process.Dispose();
+            }
+        }
+    }
+
+    private void RequestClose()
+    {
+        if (_closing || IsDisposed)
+        {
+            return;
+        }
+        try
+        {
+            BeginInvoke(new Action(Close));
+        }
+        catch (InvalidOperationException)
+        {
+            // window handle not created / already gone
+        }
     }
 
     private async Task MonitorAsync(CancellationToken token)
