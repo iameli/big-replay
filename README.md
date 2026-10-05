@@ -543,3 +543,7 @@ uncalibrated, including after reload, so you can place new references.
 
 Current real captures contain only 0/π yaw values, so the viewer omits facing
 arrows rather than presenting them as reliable headings.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

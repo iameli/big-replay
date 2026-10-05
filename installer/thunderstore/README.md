@@ -42,3 +42,4 @@ at an arbitrary program.
 - Source, standalone downloads, docs: <https://github.com/iameli/big-replay>
 - Replay viewer: <https://big-replay.iame.li/>
 - Trust notes (read-only, no game writes): <https://github.com/iameli/big-replay/blob/next/docs/trust.md>
+- License: MIT (see the LICENSE file in this package)

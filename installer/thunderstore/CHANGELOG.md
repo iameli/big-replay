@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Added an MIT "LICENSE" to the repository and to the package.
+
 ## 0.1.2
 
 - Documentation correction: **any player in the lobby can run Big Replay** — player, gourd and

@@ -115,7 +115,8 @@ try {
 
 $readme = Join-Path $root 'installer\thunderstore\README.md'
 $changelog = Join-Path $root 'installer\thunderstore\CHANGELOG.md'
-foreach ($asset in @($readme, $changelog)) {
+$license = Join-Path $root 'LICENSE'
+foreach ($asset in @($readme, $changelog, $license)) {
     if (-not (Test-Path $asset)) { throw "Missing package asset: $asset" }
 }
 
@@ -135,8 +136,9 @@ New-Item -ItemType Directory -Force (Join-Path $stage 'BigReplay') | Out-Null
 } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $stage 'manifest.json') -Encoding UTF8
 
 Copy-Item $icon (Join-Path $stage 'icon.png') -Force
-Copy-Item $readme (Join-Path $stage 'README.md') -Force
-Copy-Item $changelog (Join-Path $stage 'CHANGELOG.md') -Force
+    Copy-Item $readme (Join-Path $stage 'README.md') -Force
+    Copy-Item $changelog (Join-Path $stage 'CHANGELOG.md') -Force
+    Copy-Item $license (Join-Path $stage 'LICENSE') -Force
 Copy-Item $pluginDll (Join-Path $stage 'BepInEx\plugins\') -Force
 Copy-Item (Join-Path $desktopPayload '*') (Join-Path $stage 'BigReplay\') -Recurse -Force
 
