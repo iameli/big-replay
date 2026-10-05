@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- Recorder repinned to Big Walk **1.6.0** (build 25723723, metadata still v39): new binary
+  layout (`ImageSize` 74084352, shifted metadata/type/field tables), `PlayerNetworking.isPending`
+  moved 0x150 → 0x158. Verified live against a running 1.6.0 session — 3 players with names and
+  positions, 45 gourds. Older builds are still refused by the attach fingerprint check.
+
 ## 0.1.3
 
 - Added an MIT "LICENSE" to the repository and to the package.

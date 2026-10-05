@@ -35,8 +35,8 @@ internal static class Program
         ("Mirror.dll", "NetworkServer", ["<active>k__BackingField"]),
     ];
 
-    private const string GameVersion = "1.5.1 2608271531";
-    private const long BuildId = 24982892;
+    private const string GameVersion = "1.6.0 2609301522";
+    private const long BuildId = 25723723;
     private const string UnityVersionString = "6000.3.17f1";
 
     private static int Main(string[] args)
@@ -122,8 +122,11 @@ internal static class Program
                 int idx = Array.FindIndex(fields, f => f.Field.Name == wanted);
                 if (idx < 0)
                 {
-                    Console.Error.WriteLine($"field '{imageName}.{className}.{wanted}' not found");
-                    return 6;
+                    // Game patches rename backing fields; keep the rest of the manifest usable and
+                    // report the class's real field list so the wanted list can be re-pinned.
+                    Console.Error.WriteLine($"field '{imageName}.{className}.{wanted}' not found — available: " +
+                        string.Join(", ", fields.Select(f => $"{f.Field.Name}@0x{f.FieldOffset:X}")));
+                    continue;
                 }
                 var fi = fields[idx];
                 bool isStatic = fi.Attributes.HasFlag(FieldAttributes.Static);

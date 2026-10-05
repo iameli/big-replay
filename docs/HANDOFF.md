@@ -166,3 +166,38 @@ Start Modded → crash at generation; restore the folder → boots.
 - `installer/thunderstore/{README,CHANGELOG}.md` — the Thunderstore listing content.
 - `docs/trust.md` — the read-only/no-injection trust story (keep it accurate).
 - `docs/format.md`, `schemas/replay-v1.schema.json` — replay format contract.
+
+## 8. Big Walk 1.6.0 repin (2026-10-05) — and a crash-model correction
+
+**Build**: game version `1.6.0 2609301522` (from `Player.log`), Steam buildid **25723723**,
+`GameAssembly.dll` 71,250,432 B (mtime 15:30), `global-metadata.dat` 20,269,204 B **v39**,
+`data.unity3d` rewritten, Unity unchanged 6000.3.17f1.
+
+**Repin done**: `ManifestGen` constants and `manifest.json` regenerated — `ImageSize` 74084352,
+`MetaregRva` 57867008, `TypesTableRva` 58415072, `FieldOffsetsTableRva` 63269808, 74793 types,
+21728 field offsets. The instance layout the recorder uses is unchanged (`mover@0x90`,
+`registry@0xF0`, `sleeper@0x108`, `playerNetworking@0x1A0`, `bypassUpdate@0x1EB`,
+`username@0xF0`, `identifier@0xF8`; only `PlayerNetworking.isPending` moved 0x150→0x158), and the
+runtime-verified `PnUsername=0x100` / `PnIdentifier=0x118` still hold — verified live against a
+running 1.6.0 session (3 players, names + positions, 45 gourds). `ManifestGen` now warns and
+continues when a pinned field is renamed instead of aborting (`<username>/<identifier>k__BackingField`
+no longer exist in 1.6.0, and the recorder does not use them).
+
+**Crash model correction — there are two signatures, not one.** From WER buckets + the 10 dumps:
+- `UnityPlayer.dll+0x48e5dd`, ~5 s after start (7 events on 2026-10-05 between 13:20 and 13:27):
+  the startup/interop crash. It **stopped when the profile's `BepInEx/interop` was regenerated**
+  at 13:27 — and generation itself *succeeded* (158 entries + hash + both `.db` caches, and again
+  in ~27 s for the 15:30 build). So in-process generation is not universally broken on this box.
+- `UnityPlayer.dll+0xb139c1`, after real play (uptimes 0.7 / 4.3 / **19.6** / 2.1 min): a
+  **shutdown** crash. `Player-prev.log` ends with the game's own
+  `Shipmate.Porting.AbstractPlatformManager<T>.OnDestroy()` NullReferenceException, the faulting
+  thread's stack is all OS/D3D/TSM plumbing, and one occurrence had **no CLR loaded at all** (no
+  `coreclr`, no BepInEx, 123 modules) — so it is a **game-side teardown bug**, present before and
+  after the 15:30 hotfix, not caused by mods, LiveSplit/Uhhara (no injected module in any dump) or
+  Big Replay (was not running).
+  Bug-report repro: quit the game → crash dialog; cite `UnityPlayer.dll+0xb139c1` and the
+  `OnDestroy` NRE.
+
+**After every game update** (release chores, not code changes): publish a payload/Thunderstore
+release (the package bundles this manifest), run `scripts/export-build-refs.ps1` and re-upload
+`build-refs.zip` to `practice-canary` for CI, and rebuild plugins against the new interop.

@@ -1,23 +1,23 @@
 {
   "FormatVersion": 1,
-  "GameVersion": "1.5.1 2608271531",
-  "BuildId": 24982892,
+  "GameVersion": "1.6.0 2609301522",
+  "BuildId": 25723723,
   "UnityVersion": "6000.3.17f1",
   "ImageBase": 6442450944,
-  "ImageSize": 73736192,
-  "MetaregRva": 57565552,
-  "TypesTableRva": 57705008,
-  "FieldOffsetsTableRva": 62954016,
-  "TypeDefSizesTableRva": 63127392,
-  "TypesCount": 74655,
-  "FieldOffsetsCount": 21672,
-  "TypeDefSizesCount": 21672,
+  "ImageSize": 74084352,
+  "MetaregRva": 57867008,
+  "TypesTableRva": 58415072,
+  "FieldOffsetsTableRva": 63269808,
+  "TypeDefSizesTableRva": 63443632,
+  "TypesCount": 74793,
+  "FieldOffsetsCount": 21728,
+  "TypeDefSizesCount": 21728,
   "Classes": {
     "PlayerCharacter": {
       "Image": "Assembly-CSharp.dll",
       "Namespace": "",
-      "TypeIndex": 5498,
-      "TypeDefIndex": 5498,
+      "TypeIndex": 5497,
+      "TypeDefIndex": 5497,
       "IsValueType": false,
       "Fields": [
         {
@@ -68,7 +68,7 @@
       "Fields": [
         {
           "Name": "isPending",
-          "Offset": 336,
+          "Offset": 344,
           "IsStatic": false
         },
         {
@@ -93,8 +93,8 @@
     "PropHome": {
       "Image": "Assembly-CSharp.dll",
       "Namespace": "",
-      "TypeIndex": 5585,
-      "TypeDefIndex": 5585,
+      "TypeIndex": 5586,
+      "TypeDefIndex": 5586,
       "IsValueType": false,
       "Fields": [
         {
@@ -144,8 +144,8 @@
     "Prop": {
       "Image": "Assembly-CSharp.dll",
       "Namespace": "",
-      "TypeIndex": 5578,
-      "TypeDefIndex": 5578,
+      "TypeIndex": 5579,
+      "TypeDefIndex": 5579,
       "IsValueType": false,
       "Fields": [
         {
@@ -175,8 +175,8 @@
     "Corpse": {
       "Image": "Assembly-CSharp.dll",
       "Namespace": "",
-      "TypeIndex": 5034,
-      "TypeDefIndex": 5034,
+      "TypeIndex": 5035,
+      "TypeDefIndex": 5035,
       "IsValueType": false,
       "Fields": [
         {
@@ -196,8 +196,8 @@
     "PlayerSleeper": {
       "Image": "Assembly-CSharp.dll",
       "Namespace": "",
-      "TypeIndex": 5484,
-      "TypeDefIndex": 5484,
+      "TypeIndex": 5483,
+      "TypeDefIndex": 5483,
       "IsValueType": false,
       "Fields": [
         {
@@ -211,8 +211,8 @@
     "PeckSwitch": {
       "Image": "Assembly-CSharp.dll",
       "Namespace": "",
-      "TypeIndex": 5355,
-      "TypeDefIndex": 5355,
+      "TypeIndex": 5354,
+      "TypeDefIndex": 5354,
       "IsValueType": false,
       "Fields": [
         {
@@ -226,8 +226,8 @@
     "TrackedPeckState": {
       "Image": "Assembly-CSharp.dll",
       "Namespace": "",
-      "TypeIndex": 5361,
-      "TypeDefIndex": 5361,
+      "TypeIndex": 5360,
+      "TypeDefIndex": 5360,
       "IsValueType": false,
       "Fields": [
         {
@@ -247,8 +247,8 @@
     "PeckContext": {
       "Image": "Assembly-CSharp.dll",
       "Namespace": "",
-      "TypeIndex": 5340,
-      "TypeDefIndex": 5340,
+      "TypeIndex": 5339,
+      "TypeDefIndex": 5339,
       "IsValueType": true,
       "Fields": [
         {
@@ -277,8 +277,8 @@
     "MainMenuManager": {
       "Image": "Assembly-CSharp.dll",
       "Namespace": "",
-      "TypeIndex": 5311,
-      "TypeDefIndex": 5311,
+      "TypeIndex": 5309,
+      "TypeDefIndex": 5309,
       "IsValueType": false,
       "Fields": [
         {
@@ -303,8 +303,8 @@
     "NetworkIdentity": {
       "Image": "Mirror.dll",
       "Namespace": "Mirror",
-      "TypeIndex": 18326,
-      "TypeDefIndex": 18326,
+      "TypeIndex": 18332,
+      "TypeDefIndex": 18332,
       "IsValueType": false,
       "Fields": [
         {
@@ -349,8 +349,8 @@
     "NetworkBehaviour": {
       "Image": "Mirror.dll",
       "Namespace": "Mirror",
-      "TypeIndex": 18308,
-      "TypeDefIndex": 18308,
+      "TypeIndex": 18314,
+      "TypeDefIndex": 18314,
       "IsValueType": false,
       "Fields": [
         {
@@ -364,8 +364,8 @@
     "NetworkClient": {
       "Image": "Mirror.dll",
       "Namespace": "Mirror",
-      "TypeIndex": 18317,
-      "TypeDefIndex": 18317,
+      "TypeIndex": 18323,
+      "TypeDefIndex": 18323,
       "IsValueType": false,
       "Fields": [
         {
@@ -515,8 +515,8 @@
     "NetworkServer": {
       "Image": "Mirror.dll",
       "Namespace": "Mirror",
-      "TypeIndex": 18349,
-      "TypeDefIndex": 18349,
+      "TypeIndex": 18355,
+      "TypeDefIndex": 18355,
       "IsValueType": false,
       "Fields": [
         {
