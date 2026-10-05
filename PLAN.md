@@ -1,3 +1,5 @@
+> **Current state lives in [docs/HANDOFF.md](docs/HANDOFF.md)** (launcher plugin, Thunderstore packaging, CI, the interop-generation crash). This file is the older recorder-era plan.
+
 # Big Replay — Plan & Handoff
 
 Status: **working end-to-end, verified live.** A no-mod recorder captures Big Walk runs
