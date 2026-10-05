@@ -36,8 +36,12 @@ bodies and all gourd state.
 | Entry | Default | Meaning |
 | --- | --- | --- |
 | `Launcher / Enabled` | `true` | Start Big Replay alongside the game. |
-| `Launcher / ExePath` | *(empty)* | Explicit path to `BigReplay.exe`; empty = `<profile>/BigReplay/BigReplay.exe`. |
 | `Launcher / GraceSeconds` | `25` | Seconds after the game exits before Big Replay closes. |
+
+The launcher always runs the payload shipped in this package
+(`<profile>/BigReplay/BigReplay.exe`). There is intentionally no executable-path setting:
+BepInEx configs get shared between users, and a path entry would let a shared config point the
+launcher at an arbitrary program.
 
 ## Troubleshooting
 
@@ -46,8 +50,8 @@ interop assemblies (normally a several-minute, seemingly-frozen first launch). I
 instead of finishing, just launch again — generation restarts each run — or copy a working
 `BepInEx/interop` folder from another profile. After it succeeds, launches are fast and stable.
 
-**Big Replay didn't open.** Check `BepInEx/config/com.bigwalk.replaylauncher.cfg` (`Enabled`,
-`ExePath`) and `BepInEx/LogOutput.log` for a `Started Big Replay` line.
+**Big Replay didn't open.** Check `BepInEx/config/com.bigwalk.replaylauncher.cfg` (`Enabled`) and `BepInEx/LogOutput.log`
+for a `Started Big Replay` line.
 
 ## Links
 
