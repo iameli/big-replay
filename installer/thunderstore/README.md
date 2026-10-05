@@ -39,6 +39,16 @@ bodies and all gourd state.
 | `Launcher / ExePath` | *(empty)* | Explicit path to `BigReplay.exe`; empty = `<profile>/BigReplay/BigReplay.exe`. |
 | `Launcher / GraceSeconds` | `25` | Seconds after the game exits before Big Replay closes. |
 
+## Troubleshooting
+
+**The game crashed on the very first modded launch.** That's BepInEx generating its IL2CPP
+interop assemblies (normally a several-minute, seemingly-frozen first launch). If it crashes
+instead of finishing, just launch again — generation restarts each run — or copy a working
+`BepInEx/interop` folder from another profile. After it succeeds, launches are fast and stable.
+
+**Big Replay didn't open.** Check `BepInEx/config/com.bigwalk.replaylauncher.cfg` (`Enabled`,
+`ExePath`) and `BepInEx/LogOutput.log` for a `Started Big Replay` line.
+
 ## Links
 
 - Source, standalone downloads, docs: <https://github.com/iameli/big-replay>
