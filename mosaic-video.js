@@ -42,6 +42,14 @@ class MosaicVideo {
     this.timelineStart = 0;
     this.frameCallback = null;
     this.onFrame = null;
+    // One full-frame import per decoded frame; the per-tile crops then read this canvas.
+    // Asking the *video* for a region once per tile makes Firefox fetch and copy the frame
+    // from the decoder on every call (~16 ms each), which pins the main thread and drops
+    // playback to ~1 fps. The frame buffer is opaque, matching video frames.
+    this.frame = document.createElement("canvas");
+    this.frameContext = this.frame.getContext("2d", { alpha: false });
+    this.visibleIndices = null;      // null = every tile is displayed
+    this.mapCameraIndices = new Set(); // tiles the map thumbnails still need when hidden
 
     for (let index = 0; index < MosaicVideo.TILE_COUNT; index++) {
       const button = document.createElement("button");
@@ -158,6 +166,8 @@ class MosaicVideo {
 
     const tileWidth = width / MosaicVideo.COLUMNS;
     const tileHeight = height / MosaicVideo.ROWS;
+    this.frame.width = width;
+    this.frame.height = height;
     for (const { canvas } of this.tiles) {
       canvas.width = tileWidth;
       canvas.height = tileHeight;
@@ -203,9 +213,20 @@ class MosaicVideo {
 
   setVisibleIndices(indices) {
     const visible = new Set(indices);
+    this.visibleIndices = visible;
     for (let index = 0; index < this.tiles.length; index++) {
       this.tiles[index].button.hidden = !visible.has(index);
     }
+  }
+
+  // The map draws square crops straight out of the tile canvases, so a hidden tile that
+  // feeds a map thumbnail still has to be refreshed.
+  setMapCameraIndices(indices) {
+    this.mapCameraIndices = new Set(indices);
+  }
+
+  tileNeeded(index) {
+    return this.visibleIndices === null || this.visibleIndices.has(index) || this.mapCameraIndices.has(index);
   }
 
   sync(time, playing, rate, forceSeek = false) {
@@ -290,11 +311,13 @@ class MosaicVideo {
     }
     const tileWidth = this.video.videoWidth / MosaicVideo.COLUMNS;
     const tileHeight = this.video.videoHeight / MosaicVideo.ROWS;
+    this.frameContext.drawImage(this.video, 0, 0, this.frame.width, this.frame.height);
     for (let index = 0; index < this.tiles.length; index++) {
+      if (!this.tileNeeded(index)) continue;
       const sourceX = (index % MosaicVideo.COLUMNS) * tileWidth;
       const sourceY = Math.floor(index / MosaicVideo.COLUMNS) * tileHeight;
       this.tiles[index].context.drawImage(
-        this.video, sourceX, sourceY, tileWidth, tileHeight,
+        this.frame, sourceX, sourceY, tileWidth, tileHeight,
         0, 0, tileWidth, tileHeight,
       );
     }

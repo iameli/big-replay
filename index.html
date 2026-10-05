@@ -1690,8 +1690,10 @@ function render() {
 }
 
 function drawMapCameraFrames() {
-  if (!playbackLayout.modes.mapCameras || mapPanel.hidden || mapView.editing ||
-      mapView.zoomPreview || !mapCameraViews.length) return;
+  const needed = playbackLayout.modes.mapCameras && !mapPanel.hidden && !mapView.editing &&
+    !mapView.zoomPreview && mapCameraViews.length ? mapCameraViews.map(view => view.index) : [];
+  mosaicVideo.setMapCameraIndices(needed);
+  if (!needed.length) return;
   ctx.save();
   ctx.globalAlpha = 1;
   ctx.font = "bold 11px system-ui";
