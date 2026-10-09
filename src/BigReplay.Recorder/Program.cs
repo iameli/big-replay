@@ -1,3 +1,4 @@
+using BigReplay.Live;
 using GameAccess;
 using Replay.Format;
 
@@ -9,6 +10,7 @@ namespace BigReplay.Recorder;
 ///
 ///   probe   — attach, load manifest, print one live sample (validation)
 ///   record  — attach, sample at N Hz, write a replay file (Ctrl+C to stop)
+///             --live-port N [--live-bind IP] also streams the same frames over a WebSocket
 ///
 /// Run this on any player's machine during a lobby — every client has the full player/gourd state.
 /// </summary>
@@ -123,6 +125,8 @@ internal static class Program
         double rate = 10;
         double duration = 0; // 0 = until Ctrl+C
         string? outPath = null;
+        int? livePort = null;
+        string liveBind = "127.0.0.1";
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -135,6 +139,12 @@ internal static class Program
                     break;
                 case "-o" or "--out" when i + 1 < args.Length:
                     outPath = args[++i];
+                    break;
+                case "-l" or "--live-port" when i + 1 < args.Length:
+                    livePort = int.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+                    break;
+                case "--live-bind" when i + 1 < args.Length:
+                    liveBind = args[++i];
                     break;
                 default:
                     if (args[i].EndsWith(".json", StringComparison.OrdinalIgnoreCase))
@@ -155,6 +165,20 @@ internal static class Program
         var reader = new GameStateReader(game, layout);
         Console.WriteLine($"manifest OK; recording at {rate} Hz (Ctrl+C to stop)");
 
+        LiveSession? live = null;
+        LiveWebSocketServer? liveServer = null;
+        if (livePort is int port)
+        {
+            live = new LiveSession("Big Replay Recorder");
+            liveServer = LiveWebSocketServer.Start(liveBind, port, live);
+            Console.WriteLine($"live viewer: {LiveViewerLink.For(liveServer.Url)}");
+            Console.WriteLine($"  (the viewer is bundled with this app; the stream is {liveServer.Url})");
+            if (!liveServer.Url.Host.Equals("127.0.0.1", StringComparison.Ordinal))
+            {
+                Console.WriteLine("  (bound to a non-loopback address: anyone who can reach this port can watch)");
+            }
+        }
+
         using var stop = new CancellationTokenSource();
         ConsoleCancelEventHandler cancel = (_, e) =>
         {
@@ -165,7 +189,8 @@ internal static class Program
         try
         {
             var result = RecordingSession.Record(reader, outPath, rate, duration, stop.Token,
-                status => Console.WriteLine($"  t={status.ElapsedSeconds,5:F1}s  players={status.Players}  frames={status.Frames}"));
+                status => Console.WriteLine($"  t={status.ElapsedSeconds,5:F1}s  players={status.Players}  frames={status.Frames}"),
+                live);
             Console.WriteLine(result.Path is null
                 ? "No live walk was detected; no replay saved."
                 : $"\nwrote {result.Path} ({result.Frames} frames)");
@@ -173,6 +198,10 @@ internal static class Program
         finally
         {
             Console.CancelKeyPress -= cancel;
+            if (liveServer is not null)
+            {
+                liveServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
         }
         return 0;
     }

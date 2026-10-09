@@ -96,7 +96,27 @@ class GourdReceptacles {
     this.history = this.slots.map(() => []);
     this.occupants = this.slots.map(() => null);
     this.frame = null;
-    const current = this.slots.map(() => null), locations = new Map();
+    this.current = this.slots.map(() => null);
+    this.locations = new Map();
+    this.scanned = 0;
+    this.scan(frames);
+  }
+
+  /**
+   * Live replay: frames only ever arrive at the end, so a session can continue the scan instead
+   * of replaying every earlier frame again (which is quadratic over a long run).
+   */
+  extend(frames) {
+    if (this.scanned > frames.length) {
+      this.setReplay(frames); // rewound or replaced: rebuild from scratch
+      return;
+    }
+    if (this.scanned === frames.length) return;
+    this.scan(frames);
+  }
+
+  scan(frames) {
+    const current = this.current, locations = this.locations;
     // Record changes only. Missing observations (including the empty shutdown
     // frame) retain the last known placement; an observed move clears it.
     const change = (slot, name, frame) => {
@@ -106,7 +126,7 @@ class GourdReceptacles {
       if (history.at(-1)?.frame === frame) history[history.length - 1].name = name;
       else history.push({ frame, name });
     };
-    for (let frame = 0; frame < frames.length; frame++) {
+    for (let frame = this.scanned; frame < frames.length; frame++) {
       for (const gourd of frames[frame].gourds || []) {
         const slot = this.slotAt(gourd), previous = locations.get(gourd.name);
         if (previous !== undefined && previous !== slot && current[previous] === gourd.name) {
@@ -118,6 +138,7 @@ class GourdReceptacles {
         } else locations.delete(gourd.name);
       }
     }
+    this.scanned = frames.length;
   }
 
   at(frame) {

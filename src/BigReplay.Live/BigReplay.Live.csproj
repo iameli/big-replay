@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>BigReplay.Live</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Replay.Format\Replay.Format.csproj" />
+  </ItemGroup>
+  <!--
+    The viewer is embedded so the app can serve it from the live port. Kept in sync by building
+    from the repository root files; the published site (Pages) stages the same set.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\index.html" LogicalName="viewer/index.html" />
+    <EmbeddedResource Include="..\..\atproto.js" LogicalName="viewer/atproto.js" />
+    <EmbeddedResource Include="..\..\atproto-record.js" LogicalName="viewer/atproto-record.js" />
+    <EmbeddedResource Include="..\..\replay-players.js" LogicalName="viewer/replay-players.js" />
+    <EmbeddedResource Include="..\..\source-video-sync.js" LogicalName="viewer/source-video-sync.js" />
+    <EmbeddedResource Include="..\..\playback-layout.js" LogicalName="viewer/playback-layout.js" />
+    <EmbeddedResource Include="..\..\mosaic-video.js" LogicalName="viewer/mosaic-video.js" />
+    <EmbeddedResource Include="..\..\live-client.js" LogicalName="viewer/live-client.js" />
+    <EmbeddedResource Include="..\..\map-view.js" LogicalName="viewer/map-view.js" />
+    <EmbeddedResource Include="..\..\gourd-receptacles.js" LogicalName="viewer/gourd-receptacles.js" />
+    <EmbeddedResource Include="..\..\bigmap.jpeg" LogicalName="viewer/bigmap.jpeg" />
+    <EmbeddedResource Include="..\..\logo.svg" LogicalName="viewer/logo.svg" />
+    <EmbeddedResource Include="..\..\favicon.ico" LogicalName="viewer/favicon.ico" />
+    <EmbeddedResource Include="..\..\site.webmanifest" LogicalName="viewer/site.webmanifest" />
+    <EmbeddedResource Include="..\..\oauth-client-metadata.json" LogicalName="viewer/oauth-client-metadata.json" />
+    <EmbeddedResource Include="..\..\sample.replay.json.gz" LogicalName="viewer/sample.replay.json.gz" />
+    <EmbeddedResource Include="..\..\icons\icon-192.png" LogicalName="viewer/icons/icon-192.png" />
+    <EmbeddedResource Include="..\..\icons\icon-512.png" LogicalName="viewer/icons/icon-512.png" />
+    <EmbeddedResource Include="..\..\icons\apple-touch-icon.png" LogicalName="viewer/icons/apple-touch-icon.png" />
+    <EmbeddedResource Include="..\..\vendor\atproto-oauth.js" LogicalName="viewer/vendor/atproto-oauth.js" />
+  </ItemGroup>
+</Project>

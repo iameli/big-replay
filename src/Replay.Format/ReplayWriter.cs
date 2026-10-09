@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Replay.Format;
 
@@ -9,13 +8,7 @@ namespace Replay.Format;
 /// </summary>
 public sealed class ReplayWriter : IDisposable
 {
-    private static readonly JsonSerializerOptions Json = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        // a stray NaN/Infinity from a bad read must never kill a run: serialize as a literal
-        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
-    };
+    private static readonly JsonSerializerOptions Json = ReplayJson.Options;
 
     private readonly GZipStream _gz;
     private readonly StreamWriter _sw;

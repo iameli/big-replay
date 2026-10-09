@@ -81,6 +81,46 @@ stay in the blob. Each player entry keeps the recorded Steam `name` and an
 optional owner-chosen `nickname`, keyed by `netId`. A new blob encoding gets a
 new `format` token rather than a new collection.
 
+## Live stream
+
+While it records, the recorder can serve the same data over a WebSocket as **JSON
+Lines**: one JSON object per line, `\n` terminated, using the file's exact shapes.
+
+```text
+{"hello":{"protocol":1,"session":"<guid>","app":"Big Replay","startedAt":"…","sampleIntervalSec":0.1,"gameVersion":"…","unityVersion":"…","backlogFrames":0}}
+{"header":{ …same as the file header… }}
+{"frame":{ …same as a file frame… }}
+{"events":[ …zero or more events appended since the previous line… ]}
+{"bye":{"reason":"run-ended"}}
+```
+
+Rules a client can rely on:
+
+- A connection always begins with the run's `hello`, then its `header`, then every
+  `frame` and `events` line recorded so far, in publish order; live lines follow on
+  the same socket. A client therefore has the full run and can start wherever it
+  likes — the viewer opens at the live point and rewinds from there.
+- `hello.backlogFrames` says how many `frame` lines this connection is about to
+  receive before it reaches the live point, so a client can wait for the whole
+  history instead of guessing from whatever arrives first.
+- `session` identifies one recording run. A new run on the same socket (the desktop
+  app records the next walk automatically) sends a new `hello` and starts over.
+- `header` is sent once per run, when the first frame with players is captured, and
+  carries the landmarks known at that moment — the same ones the file header holds.
+- `time` is seconds from the start of the run and only ever increases, so a client
+  can drop a duplicate line after a reconnect.
+- `bye` ends a run (`run-ended`, `stopped`, `game-exited`, `capture-failed`) without
+  closing the socket; the next run sends a new hello.
+- Frames keep the file's gzip-JSON serializer settings (camelCase, nulls omitted),
+  so a live client is a replay client. `protocol` bumps only on a breaking change.
+
+The viewer's client (`live-client.js`) buffers a session and feeds the normal replay
+pipeline, and `docs/trust.md` covers what the stream does and does not touch.
+
+The same port also answers plain `GET` requests with the viewer bundled inside the app
+(`http://127.0.0.1:8787/`), so a browser can open the page and connect to the stream
+from one origin. Unknown paths answer `404` with that hint.
+
 ## Schema
 
 `schemas/replay-v1.schema.json` is the contract the web viewer validates against.

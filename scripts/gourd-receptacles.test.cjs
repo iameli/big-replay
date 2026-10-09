@@ -36,6 +36,21 @@ test('occupancy follows observations across seeks, removal, missing frames, and 
   assert.ok(model.at(0).every(name => name === null), 'previous recording must not leak');
 });
 
+test('live replay extends the history incrementally and matches a full rebuild', () => {
+  const a = new GourdReceptacles(), b = new GourdReceptacles();
+  const frames = [frame(), frame(placed(a, 0, 100)), frame(placed(a, 2, 159)), frame(), frame(placed(a, 0, 100))];
+  b.setReplay(frames);
+  for (let index = 0; index < frames.length; index++) {
+    a.extend(frames.slice(0, index + 1));
+    assert.equal(a.scanned, index + 1, `scanned through frame ${index}`);
+    assert.deepEqual(Array.from(a.at(index)), Array.from(b.at(index)), `occupancy at frame ${index}`);
+  }
+  // A shorter recording (a new session, a rewind) must rebuild rather than keep stale history.
+  a.extend([frame()]);
+  assert.equal(a.scanned, 1);
+  assert.ok(a.at(0).every(name => name === null));
+});
+
 test('moving and swapping gourds clears their old slots regardless of observation order', () => {
   for (const reverse of [false, true]) {
     const model = new GourdReceptacles();

@@ -61,6 +61,11 @@ The portable ZIP does not register Windows startup automatically.
   starts watching again and creates a fresh recording when the game is available.
 - Closing the window finishes and saves; leave it open or minimized during a run.
 - **Open recordings folder** opens the output folder in Explorer.
+- While it is running it also serves the current walk as a **live stream**, with the
+  viewer built in: open the address in the window (or **Copy live viewer link**) and
+  watch the run live as it happens (see
+  [Live replay](#live-replay)). `--no-live`, `--live-port` and `--live-bind` change
+  this.
 - If the game exits, the replay is finished and the app watches for the next launch.
 - When a recorded walk drops to **zero players**, its replay is finished automatically.
   The app waits for players again and records the next walk in a new file, even if
@@ -179,8 +184,8 @@ remain unchanged.
 
 For offline use, open the root `index.html` from a checkout. Keep
 `atproto-record.js`, `source-video-sync.js`, `playback-layout.js`,
-`mosaic-video.js`, `map-view.js`, `gourd-receptacles.js`, and `bigmap.jpeg`
-beside it. No build or package install is needed.
+`mosaic-video.js`, `live-client.js`, `map-view.js`, `gourd-receptacles.js`, and
+`bigmap.jpeg` beside it. No build or package install is needed.
 Alternatively, serve the repository root with a static HTTP server and
 open `/?replay=run1.replay.json.gz`.
 
@@ -306,6 +311,59 @@ Map alignment, and Events into collapsible sections. An AT Protocol record secti
 appears when the hash route points at a record. Player video and Map alignment start
 collapsed; the other sections start open. **Map display** contains the Trails
 dropdown and marker legend.
+
+### Live replay
+
+Big Replay can stream a walk while it is still being recorded, and it serves the
+viewer itself, so there is nothing to install, host, or upload:
+
+1. Start Big Replay on the recording PC (or `record --live-port 8787` from the CLI).
+2. Open the address shown in its window, or click **Copy live viewer link**:
+
+```text
+http://127.0.0.1:8787/?live=ws://127.0.0.1:8787/
+```
+
+The viewer is bundled inside the app and served from the same port as the stream, so
+the page and the stream share an origin. That is deliberate: browsers refuse `ws://`
+connections from an `https://` page (mixed content), which is why live mode lives on
+the app's own `http://127.0.0.1:8787/` address and not on the published site. Any
+browser on the PC works, including Firefox; the viewer's **Live** section also
+connects by hand if you would rather paste an address.
+
+To let other people watch on your network, publish the port:
+
+```powershell
+dotnet run --project src/BigReplay.Desktop -- --live-bind 0.0.0.0
+# friends then open http://<your LAN ip>:8787/
+```
+
+Windows will ask about the firewall the first time. Only do this with people you want
+watching: the stream carries every recorded player name and position.
+
+Connecting opens the run at its **live point** and keeps following it from there:
+
+- The recorder sends the whole run so far on connect, then each new sample as it is
+  taken — the same header, frames and events a finished `.replay.json.gz` holds,
+  one JSON object per line over a WebSocket. The viewer uses that backlog to fill in
+  history, but starts at the newest frame rather than replaying everything missed.
+- Rewinding works as usual: scrub back, use 2×–8× to catch up, or click **Go live**
+  to jump back to the newest frame. A deliberate rewind survives a dropped
+  connection; only a viewer riding the live edge is snapped forward again.
+- At the newest frame the viewer keeps playing instead of stopping, so it stays on
+  the live edge as frames arrive. The status line reads `LIVE` there and
+  `m:ss behind live` while you are reviewing earlier parts.
+- The map, trails, tower progress, event list and player colours all update during
+  the run. Players who join mid-walk get their own colour, label and camera button.
+- When a walk ends the viewer keeps the finished run readable and waits for the
+  next one; the next walk starts as a new session on the same connection.
+- Dropped connections reconnect on their own (1s, 2s, 4s, 8s, then every 10s) and
+  re-fetch the run, so the playhead survives a restart of the recorder.
+
+`--live-port`, `--live-bind` and `--no-live` control the server; the recorder CLI
+takes the same flags. The stream is read-only and stays on your network: nothing is
+uploaded, and the recorder still only reads game memory. Live runs cannot be shared
+as `com.iameli.bigWalk.replay` records — **Share** needs a saved replay file.
 
 ### Sharing replays
 

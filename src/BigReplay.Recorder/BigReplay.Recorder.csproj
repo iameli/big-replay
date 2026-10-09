@@ -4,6 +4,7 @@
     <RootNamespace>BigReplay.Recorder</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\BigReplay.Live\BigReplay.Live.csproj" />
     <ProjectReference Include="..\GameAccess\GameAccess.csproj" />
     <ProjectReference Include="..\Replay.Format\Replay.Format.csproj" />
   </ItemGroup>

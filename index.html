@@ -71,9 +71,9 @@
   #replay-byline a, #account-signed-in a, #share-bsky { color: #56b4ff; }
   #share-section p { font-size: 11px; color: #aab8cc; margin: 6px 0; overflow-wrap: anywhere; }
   .share-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
-  #sign-in-form input, #share-link, #share-form input, #share-form textarea { min-width: 0; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; font: inherit; }
-  #sign-in-form input, #share-link { flex: 1; }
-  #share-status.error, #drop-status.error, #share-form-status.error { color: #ff8a8a; }
+  #live-url, #sign-in-form input, #share-link, #share-form input, #share-form textarea { min-width: 0; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; font: inherit; }
+  #live-url, #sign-in-form input, #share-link { flex: 1; }
+  #share-status.error, #drop-status.error, #share-form-status.error, #live-status.error { color: #ff8a8a; }
   #meta { font-size: 11px; color: #7d8ba0; margin: 0 12px 8px; }
   .sidebar-section { flex: none; border-top: 1px solid #313c52; }
   .sidebar-section > summary { padding: 10px 12px; font-weight: 600; cursor: pointer; user-select: none; }
@@ -135,6 +135,7 @@
   .editing-nicknames #nickname-help, .editing-nicknames #nickname-status, #nickname-status.storage-error { display: block; }
   button:disabled { opacity: .45; cursor: default; }
   #layout-section p { margin: 6px 0; color: #aab8cc; font-size: 11px; }
+  #live-section p { margin: 6px 0; color: #aab8cc; font-size: 11px; overflow-wrap: anywhere; }
   #layout-picker { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
   #layout-picker .btn { min-width: 0; padding: 6px 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #layout-picker .btn[aria-pressed=true] { border-color: #56b4ff; background: #263b55; color: #fff; }
@@ -221,6 +222,21 @@
     <p id="replay-description" hidden></p>
   </div>
   <div id="meta"></div>
+  <details class="sidebar-section" id="live-section" open>
+    <summary>Live</summary>
+    <div class="section-body">
+      <p>Watch a walk being recorded right now. Connecting jumps to the live point; scrub back to review anything you missed.</p>
+      <div class="share-row">
+        <input id="live-url" type="text" placeholder="ws://127.0.0.1:8787/" aria-label="Live address" autocomplete="off" autocapitalize="none" spellcheck="false">
+        <button class="btn" id="live-connect" type="button">Connect</button>
+      </div>
+      <div class="share-row">
+        <button class="btn" id="live-jump" type="button" hidden>Go live</button>
+        <button class="btn" id="live-stop" type="button" hidden>Disconnect</button>
+      </div>
+      <p id="live-status" role="status">Start Big Replay on the recording PC, then connect to the address in its window.</p>
+    </div>
+  </details>
   <details class="sidebar-section" id="layout-section" open>
     <summary>Playback layout</summary>
     <div class="section-body">
@@ -459,6 +475,7 @@
 <script src="mosaic-video.js"></script>
 <script src="map-view.js"></script>
 <script src="gourd-receptacles.js"></script>
+<script src="live-client.js"></script>
 <script>
 "use strict";
 document.getElementById("about-open").addEventListener("click", () => document.getElementById("about-dialog").showModal());
@@ -1010,14 +1027,22 @@ async function parseBuffer(buf, name, sharedReplay = null) {
     : `sha256:${Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buf)),
       byte => byte.toString(16).padStart(2, "0")).join("")}`;
   if (!parsed?.frames?.length) { alert("no frames in replay"); return false; }
+  startReplay(parsed, { buf, gzipped, sharedReplay });
+  return true;
+}
+
+// Adopts a replay the whole viewer then works with — whether it came from a file, a shared
+// record, or a live stream. Callers set nicknameRecordingScope first.
+function startReplay(parsed, { buf = null, gzipped = false, sharedReplay = null, live = false } = {}) {
+  liveActive = live;
   playerAliases = normalizeReplayPlayers(parsed);
   replay = parsed;
-  replaySource = { buf, gzipped };
+  replaySource = live ? null : { buf, gzipped };
   mosaicVideo.reset();
   setMosaicStartTime(0, false);
   setShared(sharedReplay);
   // A local file replaces any shared replay, so leave its /<did>/<rkey> address.
-  if (!sharedReplay && location.pathname !== "/") history.pushState(null, "", "/");
+  if (!sharedReplay && !live && location.pathname !== "/") history.pushState(null, "", "/");
   selectedVideoPlayer = null;
   mosaicVideo.selectIndex(-1);
   playbackLayout.setSelection(["map"]);
@@ -1043,7 +1068,6 @@ async function parseBuffer(buf, name, sharedReplay = null) {
   tick();
   setPlaying(false);
   renderSharing();
-  return true;
 }
 
 async function loadUrl(url) {
@@ -1051,6 +1075,324 @@ async function loadUrl(url) {
   const buf = await r.arrayBuffer();
   await parseBuffer(buf, url);
 }
+
+// ---------- live replay ----------
+// The recorder streams JSON lines over a WebSocket: the run so far on connect, then live frames.
+// The viewer treats the growing buffer as an ordinary replay, opens at the live point, and keeps
+// advancing at the frontier. Scrub back any time to review earlier parts of the run.
+const LIVE_ADDRESS_STORAGE = "big-walk:live-address:v1";
+const LIVE_REFRESH_MS = 250;
+const liveUrlInput = document.getElementById("live-url");
+const liveStatusElement = document.getElementById("live-status");
+const liveConnectButton = document.getElementById("live-connect");
+const liveJumpButton = document.getElementById("live-jump");
+const liveStopButton = document.getElementById("live-stop");
+const liveBuffer = new LiveReplayBuffer();
+let liveClient = null;
+let liveActive = false;
+let liveAdopted = false;
+let liveFollow = false;
+let liveRewindTime = null;
+let liveStatusAt = 0, liveMetaAt = 0, liveStructureAt = 0, liveReceptaclesAt = 0, liveEventsAt = 0;
+let livePlayersAt = 0;
+let livePendingEvents = false, livePendingPlayers = false;
+
+try {
+  const saved = localStorage.getItem(LIVE_ADDRESS_STORAGE);
+  if (saved) liveUrlInput.value = saved;
+} catch { /* Live address is a convenience; the field still works without storage. */ }
+
+function saveLiveAddress(address) {
+  try { localStorage.setItem(LIVE_ADDRESS_STORAGE, address); } catch { /* session-only */ }
+}
+
+function setLiveStatus(text, error = false) {
+  liveStatusElement.textContent = text;
+  liveStatusElement.classList.toggle("error", error);
+}
+
+function liveFollowing() {
+  return liveActive && liveClient !== null && liveBuffer.running;
+}
+
+/** True when the viewer is rendering the live buffer itself, not a snapshot it still holds. */
+function liveBound() {
+  return replay !== null && liveBuffer.frames === replay.frames;
+}
+
+function connectLive(address) {
+  let client;
+  try {
+    client = new LiveReplayClient({
+      url: address,
+      onMessage: onLiveMessage,
+      onStatus: () => { liveStatusAt = 0; refreshLive(); },
+      onBadLine: () => {
+        setLiveStatus("The recorder sent a line this viewer could not read; skipping it.", true);
+      },
+    });
+  } catch (error) {
+    setLiveStatus(error.message, true);
+    return false;
+  }
+  disconnectLive();
+  const blocked = liveBlockedReason(client.url, location.protocol);
+  if (blocked) {
+    client.disconnect();
+    setLiveStatus(blocked, true);
+    return false;
+  }
+  liveClient = client;
+  liveBuffer.reset(null);
+  liveAdopted = false;
+  liveFollow = true;
+  liveRewindTime = null;
+  liveUrlInput.value = client.url;
+  saveLiveAddress(client.url);
+  setLiveStatus(`Connecting to ${client.url}…`);
+  client.connect();
+  updateLiveControls();
+  return true;
+}
+
+function disconnectLive() {
+  if (liveClient) liveClient.disconnect();
+  liveClient = null;
+  liveFollow = false;
+  updateLiveControls();
+}
+
+/** Reads one stream message into the buffer, then lets the refresh timer move the viewer. */
+function onLiveMessage(message) {
+  const change = liveBuffer.apply(message);
+  if (change.kind === "unknown") return;
+  if (change.kind === "hello") {
+    if (change.mismatch) {
+      setLiveStatus(`The recorder streams live protocol ${liveBuffer.protocol}; this viewer speaks ${LIVE_PROTOCOL_VERSION}. Reload the page for the newest viewer.`, true);
+      return;
+    }
+    // Live sessions open at the live point. When the same run is re-sent after a dropped socket,
+    // a viewer that had deliberately rewound keeps its position instead of being yanked forward.
+    const current = frames.length ? frames[frameIdx]?.time ?? null : null;
+    liveRewindTime = change.resumed && current !== null ? current : null;
+    liveMetaAt = liveStructureAt = liveReceptaclesAt = liveEventsAt = 0;
+    if (change.sessionChanged) liveAdopted = false;
+    setLiveStatus(liveAdopted ? "Reconnected; catching up to live…" : "Connected. Waiting for the walk to start…");
+    return;
+  }
+  if (change.kind === "bye") {
+    liveFollow = false;
+    setLiveStatus(`The run ended (${change.reason || "closed"}). Waiting for the next walk…`);
+    return;
+  }
+  if (change.kind === "header") return;
+  if (change.kind === "events") {
+    livePendingEvents = true;
+    return;
+  }
+  if (change.kind === "frame") {
+    // One rule for a first connect and for a reconnect that re-sends the run: wait for the history
+    // the recorder announced, then adopt (the hello's rewind state decides where it opens).
+    if (!liveBound() || !liveAdopted) {
+      if (!liveBuffer.header || liveBuffer.pendingBacklog > 0) return;
+      adoptLiveReplay();
+    }
+    if (!liveAdopted) return;
+    if (livePendingPlayers) return;
+    // A player who joined mid-run needs a colour, label and layout button of their own.
+    const latest = frames.at(-1);
+    for (const player of latest?.players || []) {
+      if (player.netId !== 0 && !playerNames.has(player.netId)) {
+        livePendingPlayers = true;
+        break;
+      }
+    }
+  }
+}
+
+function adoptLiveReplay() {
+  if (!liveBuffer.header || !liveBuffer.frames.length) return;
+  liveAdopted = true;
+  nicknameRecordingScope = liveBuffer.startedAt
+    ? `recorded:${liveBuffer.startedAt}`
+    : `live:${liveBuffer.sessionId || "unknown"}`;
+  startReplay({ header: liveBuffer.header, frames: liveBuffer.frames, events: liveBuffer.events },
+    { live: true });
+  bindLiveArrays();
+  const startTime = liveStartTime({
+    frontierTime: frames.at(-1)?.time, rewindTime: liveRewindTime,
+  });
+  liveRewindTime = null;
+  seekReplayFrame(replayFrameIndexAtOrAfter(frames, startTime));
+  liveFollow = true;
+  setPlaying(true);
+  updateLiveControls();
+  const behind = Math.max(0, (frames.at(-1)?.time ?? 0) - (frames[frameIdx]?.time ?? 0));
+  setLiveStatus(behind <= 1
+    ? `Watching ${liveBuffer.app || "the live run"} at the live point; scrub back to review earlier parts.`
+    : `Resumed your review position; it will catch up to live.`);
+}
+
+/**
+ * The viewer renders the buffer's own arrays, so frames and events that arrive later are visible.
+ * Player merging (normalizeReplayPlayers) replaces `replay.events` with a filtered copy, which
+ * must not become the list the viewer reads — otherwise live events stop appearing.
+ */
+function bindLiveArrays() {
+  frames = replay.frames = liveBuffer.frames;
+  events = replay.events = liveBuffer.events;
+}
+
+/** Adds players who appeared mid-run without disturbing the colours already assigned. */
+function syncLivePlayers() {
+  const latest = frames.at(-1);
+  if (!latest) return;
+  let changed = false;
+  for (const player of latest.players) {
+    if (player.netId === 0) continue;
+    if (!playerNames.has(player.netId)) {
+      playerNames.set(player.netId, "");
+      changed = true;
+    }
+    const name = typeof player.name === "string" ? player.name.trim() : "";
+    if (name && !playerNames.get(player.netId)) {
+      playerNames.set(player.netId, name);
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  const counts = new Map();
+  for (const name of playerNames.values()) if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  for (const [id, name] of playerNames) {
+    if (playerNicknameKeys.has(id)) continue;
+    playerNicknameKeys.set(id, JSON.stringify(name && counts.get(name) === 1
+      ? ["name", name] : ["recording", nicknameRecordingScope, id]));
+  }
+  const used = new Set(playerColorAssignments.values());
+  for (const id of playerNames.keys()) {
+    if (playerColorAssignments.has(id)) continue;
+    let index = PLAYER_PALETTE.findIndex(entry => entry.name === savedPlayerColors[id]);
+    if (index < 0 || used.has(index)) index = PLAYER_PALETTE.findIndex((_, i) => !used.has(i));
+    if (index < 0) index = playerColorAssignments.size % PLAYER_PALETTE.length;
+    playerColorAssignments.set(id, index);
+    used.add(index);
+  }
+  renderPlayerSettings();
+  refreshPlayerLabels();
+}
+
+function updateLiveControls() {
+  const state = liveClient ? liveClient.state : "closed";
+  // Connect stays available while a connection is retrying or when the address has been edited,
+  // so switching to another recorder never requires guessing that Disconnect must come first.
+  const sameAddress = liveClient !== null && liveUrlInput.value.trim() === liveClient.url;
+  const connectedHere = state === "connected" && sameAddress;
+  const blocked = liveClient === null &&
+    liveBlockedReason(liveUrlInput.value.trim() || LIVE_DEFAULT_ADDRESS, location.protocol) !== null;
+  liveConnectButton.disabled = connectedHere || blocked;
+  liveConnectButton.textContent = connectedHere ? "Connected" : "Connect";
+  liveStopButton.hidden = liveClient === null;
+  liveJumpButton.hidden = !liveBuffer.live;
+}
+
+function updateLiveStatusLine() {
+  if (!liveClient) {
+    const hint = liveBlockedReason(liveUrlInput.value.trim() || LIVE_DEFAULT_ADDRESS, location.protocol);
+    setLiveStatus(hint ?? (liveActive
+      ? "Disconnected. The run stays readable; connect again to follow it live."
+      : "Start Big Replay on the recording PC, then open the address it shows in its window."));
+    return;
+  }
+  const state = liveClient.state;
+  if (state === "connecting") { setLiveStatus(`Connecting to ${liveClient.url}…`); return; }
+  if (state === "retrying") {
+    setLiveStatus(`Lost the live connection; retrying in ${Math.round((liveClient.retryDelayMs ?? 0) / 1000)}s…`, true);
+    return;
+  }
+  if (state === "closed") { setLiveStatus("Disconnected."); return; }
+  if (!liveAdopted) {
+    setLiveStatus(liveBuffer.pendingBacklog > 0
+      ? `Catching up on the run so far: ${liveBuffer.frames.length.toLocaleString()}/`
+        + `${liveBuffer.backlogFrames.toLocaleString()} frames…`
+      : `Connected to ${liveClient.url} · waiting for the walk to start…`);
+    return;
+  }
+  const behind = Math.max(0, liveBuffer.latestTime - (frames[frameIdx]?.time ?? 0));
+  const frameCount = `${liveBuffer.frames.length.toLocaleString()} frames`;
+  if (!liveBuffer.running) {
+    setLiveStatus(`${frameCount} · run ended (${liveBuffer.byeReason || "closed"}) · waiting for the next walk…`);
+    return;
+  }
+  setLiveStatus(behind <= 0.5
+    ? `LIVE · ${frameCount} · recording`
+    : `Live · ${frameCount} · ${fmt(behind)} behind live`);
+}
+
+/** Moves the viewer as frames arrive, at a cadence the renderer can sustain for hours. */
+function refreshLive() {
+  const now = performance.now();
+  // While a reconnect is re-sending the run the buffer is shorter than what the viewer shows, so
+  // it keeps its own snapshot until adoption swaps it in.
+  if (liveClient && liveBound() && liveBuffer.frames.length) {
+    if (frameIdx > liveBuffer.frames.length - 1) frameIdx = liveBuffer.frames.length - 1;
+    scrub.max = liveBuffer.frames.length - 1;
+    if (livePendingPlayers && now - livePlayersAt >= LIVE_REFRESH_MS) {
+      livePendingPlayers = false;
+      livePlayersAt = now;
+      syncLivePlayers();
+      playerAliases = normalizeReplayPlayers(replay);
+      bindLiveArrays();
+      mapView.setReplay(frames);
+      liveStructureAt = now;
+    }
+    if (livePendingEvents && now - liveEventsAt >= LIVE_REFRESH_MS) {
+      livePendingEvents = false;
+      liveEventsAt = now;
+      renderEvents();
+    }
+    if (now - liveReceptaclesAt >= LIVE_REFRESH_MS * 2) {
+      liveReceptaclesAt = now;
+      receptacles.extend(frames);
+    }
+    if (now - liveStructureAt >= LIVE_REFRESH_MS * 4) {
+      liveStructureAt = now;
+      playerAliases = normalizeReplayPlayers(replay);
+      bindLiveArrays();
+      mapView.setReplay(frames);
+    }
+    if (now - liveMetaAt >= 1000) {
+      liveMetaAt = now;
+      updateMeta();
+    }
+  }
+  if (now - liveStatusAt >= LIVE_REFRESH_MS * 2) {
+    liveStatusAt = now;
+    updateLiveStatusLine();
+    updateLiveControls();
+  }
+}
+
+liveConnectButton.addEventListener("click", () => {
+  if (connectLive(liveUrlInput.value.trim() || LIVE_DEFAULT_ADDRESS)) liveUrlInput.blur();
+});
+liveUrlInput.addEventListener("keydown", event => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    liveConnectButton.click();
+  }
+});
+liveJumpButton.addEventListener("click", () => {
+  if (!frames.length) return;
+  liveFollow = true;
+  seekReplayFrame(frames.length - 1);
+  setPlaying(true);
+  updateLiveControls();
+});
+liveStopButton.addEventListener("click", () => {
+  disconnectLive();
+  setLiveStatus("Disconnected.");
+});
+setInterval(refreshLive, LIVE_REFRESH_MS);
 
 // ---------- Atmosphere sharing ----------
 const MAX_TYPICAL_BLOB_BYTES = 50 * 1024 * 1024;
@@ -1114,7 +1456,7 @@ function renderSharing() {
     link.href = `/${account.did}`;
     link.textContent = actorLabel(account.did, account.handle);
   }
-  document.getElementById("share-open").hidden = !(signedIn && replay && !shared);
+  document.getElementById("share-open").hidden = !(signedIn && replay && !shared && replaySource);
   document.getElementById("shared-actions").hidden = !shared;
   if (shared) {
     const link = replayLink(shared.did, shared.rkey);
@@ -1373,8 +1715,10 @@ account.init().catch(err => {
 renderSharing();
 
 const urlParam = new URLSearchParams(location.search).get("replay");
+const liveParam = new URLSearchParams(location.search).get("live");
 if (route.redirect) history.replaceState(null, "", route.redirect + location.search);
-if (route.kind === "replay") loadSharedReplay(route.actor, route.rkey);
+if (liveParam) connectLive(liveParam);
+else if (route.kind === "replay") loadSharedReplay(route.actor, route.rkey);
 else if (route.kind === "actor") listReplays(route.actor, false);
 else if (route.kind === "unknown") setStatus(dropStatus, "There's nothing at this address.", true);
 else if (urlParam) loadUrl(urlParam);
@@ -1761,7 +2105,7 @@ function updatePlaybackStart(seekCurrent) {
 
 function setPlaying(v) {
   v = Boolean(v && replay);
-  if (v && replay && frameIdx === frames.length - 1) seekReplayFrame(playbackStartFrame);
+  if (v && replay && frameIdx === frames.length - 1 && !liveFollowing()) seekReplayFrame(playbackStartFrame);
   playbackTime = frames[frameIdx]?.time || 0;
   lastTick = performance.now();
   playing = v;
@@ -1826,10 +2170,14 @@ setInterval(() => {
   lastTick = now;
   if (!playing || !replay) { playbackTime = frames[frameIdx]?.time || 0; return; }
   playbackTime += elapsed * speed;
+  // Live: hold the clock at the newest frame rather than running past it, and never stop there —
+  // the next frame the recorder sends continues the run.
+  const following = liveFollowing();
+  if (following) playbackTime = Math.min(playbackTime, frames.at(-1)?.time ?? playbackTime);
   let next = frameIdx;
   while (next + 1 < frames.length && frames[next + 1].time <= playbackTime) next++;
   if (next !== frameIdx) { frameIdx = next; tick(); }
-  if (frameIdx === frames.length - 1) setPlaying(false);
+  if (!following && frameIdx === frames.length - 1) setPlaying(false);
 }, 33);
 
 function updateStatus(fr) {

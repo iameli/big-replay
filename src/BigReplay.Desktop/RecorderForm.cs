@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using BigReplay.Live;
 using BigReplay.Recorder;
 using GameAccess;
 
@@ -26,11 +27,37 @@ internal sealed class RecorderForm : Form
     private readonly int _graceSeconds;
     private readonly CancellationTokenSource _lifetime = new();
 
-    public RecorderForm(bool exitWithGame = false, int? gamePid = null, int graceSeconds = 25)
+    private readonly Label _liveLabel = new() { AutoSize = true, ForeColor = Color.FromArgb(85, 92, 104) };
+    private readonly Button _copyLive = new() { AutoSize = true, Text = "Copy live viewer link", Padding = new Padding(12, 6, 12, 6), Visible = false };
+    private readonly System.Windows.Forms.Timer _liveTimer = new() { Interval = 1000 };
+    private readonly bool _liveEnabled;
+    private LiveSession? _liveSession;
+    private LiveWebSocketServer? _liveServer;
+    private readonly string? _liveError;
+    private DateTime _copyNoticeUntil = DateTime.MinValue;
+
+    public RecorderForm(bool exitWithGame = false, int? gamePid = null, int graceSeconds = 25,
+        bool liveEnabled = true, int livePort = 8787, string liveBind = "127.0.0.1")
     {
         _exitWithGame = exitWithGame;
         _gamePid = gamePid;
         _graceSeconds = graceSeconds;
+        _liveEnabled = liveEnabled;
+        if (liveEnabled)
+        {
+            try
+            {
+                _liveSession = new LiveSession("Big Replay");
+                _liveServer = LiveWebSocketServer.Start(liveBind, livePort, _liveSession);
+            }
+            catch (Exception ex)
+            {
+                _liveError = ex.Message;
+                _liveSession = null;
+                _liveServer = null;
+            }
+        }
+        _liveTimer.Tick += (_, _) => UpdateLiveStatus();
         Text = "Big Replay";
         Icon = _appIcon;
         using (var logoIcon = new Icon(_appIcon, 128, 128))
@@ -39,6 +66,8 @@ internal sealed class RecorderForm : Form
         }
         Disposed += (_, _) =>
         {
+            _liveTimer.Stop();
+            _liveTimer.Dispose();
             _lifetime.Cancel();
             _lifetime.Dispose();
             _logoBitmap.Dispose();
@@ -54,7 +83,7 @@ internal sealed class RecorderForm : Form
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(28), ColumnCount = 1, RowCount = 10,
+            Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(28), ColumnCount = 1, RowCount = 11,
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         var brand = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = Padding.Empty };
@@ -73,13 +102,19 @@ internal sealed class RecorderForm : Form
         _detail.Margin = new Padding(0, 8, 0, 16);
         _file.Margin = new Padding(0, 0, 0, 8);
         _lastSaved.Margin = new Padding(0, 0, 0, 20);
+        _liveLabel.Margin = new Padding(0, 0, 0, 16);
         var folderTitle = new Label { Text = "Save replays to", AutoSize = true };
         var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 12, 0, 12) };
         buttons.Controls.Add(_pause);
         buttons.Controls.Add(_openFolder);
+        _copyLive.Visible = _liveServer is not null;
+        buttons.Controls.Add(_copyLive);
         var hint = new Label
         {
-            Text = "Run it on any player's PC in the lobby — every client has the full player and gourd state.\nClosing this window finishes and saves the current replay.",
+            Text = "Run it on any player's PC in the lobby — every client has the full player and gourd state.\n" +
+                "Closing this window finishes and saves the current replay.\n" +
+                "Live viewers open the address above in any browser on this PC — the viewer is built in,\n" +
+                "and it jumps to the live point, with scrubbing to review what already happened.",
             AutoSize = true, ForeColor = Color.FromArgb(85, 92, 104),
         };
         layout.Controls.Add(brand);
@@ -88,6 +123,7 @@ internal sealed class RecorderForm : Form
         layout.Controls.Add(_detail);
         layout.Controls.Add(_file);
         layout.Controls.Add(_lastSaved);
+        layout.Controls.Add(_liveLabel);
         layout.Controls.Add(folderTitle);
         layout.Controls.Add(_folder);
         layout.Controls.Add(buttons);
@@ -96,11 +132,12 @@ internal sealed class RecorderForm : Form
         layout.SizeChanged += (_, _) =>
         {
             int width = Math.Max(100, layout.ClientSize.Width - layout.Padding.Horizontal - 6);
-            foreach (var label in new[] { _status, _detail, _file, _lastSaved, hint })
+            foreach (var label in new[] { _status, _detail, _file, _lastSaved, _liveLabel, hint })
             {
                 label.MaximumSize = new Size(width, 0);
             }
         };
+        _copyLive.Click += (_, _) => CopyLiveLink();
         _pause.Click += async (_, _) =>
         {
             if (_runTask.IsCompleted)
@@ -123,11 +160,57 @@ internal sealed class RecorderForm : Form
         Shown += (_, _) =>
         {
             StartMonitoring();
+            UpdateLiveStatus();
+            _liveTimer.Start();
             if (_exitWithGame)
             {
                 _ = ExitWatcherAsync(_lifetime.Token);
             }
         };
+    }
+
+    /// <summary>Live status line: where to connect, what the stream holds, who is watching.</summary>
+    private void UpdateLiveStatus()
+    {
+        if (_copyNoticeUntil != default && DateTime.UtcNow >= _copyNoticeUntil)
+        {
+            _copyNoticeUntil = default;
+            _copyLive.Text = "Copy live viewer link";
+        }
+        if (_liveServer is null || _liveSession is null)
+        {
+            _liveLabel.Text = !_liveEnabled
+                ? "Live sharing is off."
+                : _liveError is null
+                    ? "Live sharing is unavailable."
+                    : $"Live sharing unavailable: {_liveError}";
+            return;
+        }
+        string state = _liveSession.IsRunning
+            ? $"{_liveSession.FrameCount:N0} frames"
+            : "waiting for a walk";
+        int viewers = _liveServer.ClientCount;
+        _liveLabel.Text =
+            $"Live viewers watch at {LiveViewerLink.For(_liveServer.Url)} · {state} · " +
+            $"{(viewers == 1 ? "1 viewer" : $"{viewers} viewers")}";
+    }
+
+    private void CopyLiveLink()
+    {
+        if (_liveServer is null)
+        {
+            return;
+        }
+        try
+        {
+            Clipboard.SetText(LiveViewerLink.For(_liveServer.Url));
+            _copyLive.Text = "Copied";
+            _copyNoticeUntil = DateTime.UtcNow.AddSeconds(3);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Could not copy the link", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     private void StartMonitoring()
@@ -300,7 +383,7 @@ internal sealed class RecorderForm : Form
                             {
                                 var layout = GameLayout.Attach(game, manifest);
                                 return RecordingSession.Record(new GameStateReader(game, layout), path, 10, 0, token,
-                                    sample => ((IProgress<RecordingStatus>)progress).Report(sample));
+                                    sample => ((IProgress<RecordingStatus>)progress).Report(sample), _liveSession);
                             }, token);
                             if (result.Path is not null)
                             {
@@ -372,6 +455,14 @@ internal sealed class RecorderForm : Form
             _stop?.Cancel();
             await _runTask;
             _stop?.Dispose();
+            if (_liveServer is not null)
+            {
+                // Clean close for viewers: they see the socket go away rather than a timeout.
+                _liveTimer.Stop();
+                _liveServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                _liveServer = null;
+                _liveSession = null;
+            }
             _allowClose = true;
             Close();
             return;

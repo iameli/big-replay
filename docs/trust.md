@@ -20,11 +20,32 @@ The recorder is designed so speedrunners can run it without worrying about game 
   no loader, no hooks, no debugger.
 - **No allocs** in the game. `VirtualAllocEx` is never called.
 - **No game file modifications.** The game folder and profile stay untouched.
-- **No network.** The recorder writes a local replay file only. Sharing happens
+- **No outbound network.** The recorder never connects to anything. Sharing happens
   separately in the web viewer, and only when you sign in and choose **Share**.
 
 The one process-level interaction is opening a handle with read access — the same access any
 memory probe takes. Pure reads cannot change game state.
+
+## Live streaming (the one listening socket)
+
+The desktop app and `record --live-port` serve the captured frames over a local
+WebSocket so people can watch a walk as it happens:
+
+- It **listens**; it never dials out. Default bind is loopback
+  (`ws://127.0.0.1:8787/`), so only programs on your own machine can connect.
+- The same port serves the viewer itself (`http://127.0.0.1:8787/`) — static files
+  bundled into the app, no data, no telemetry, no outbound requests of its own.
+- What leaves is only replay data you already have on disk: player positions, gourd
+  and monument state, names as recorded. It is the same JSON a `.replay.json.gz`
+  holds, sent as plain lines (no compression, no encryption — treat it like the
+  recording itself).
+- A viewer elsewhere on your LAN must be opted in with `--live-bind` (for example
+  `--live-bind 0.0.0.0`); that will prompt Windows Firewall and lets anyone who can
+  reach the port watch. `--no-live` turns the server off entirely.
+- The stream is read-only in both directions: viewers cannot change anything, and no
+  client input reaches the game or the recorder.
+- It does not touch the game process at all — the capture loop is unchanged, and the
+  server only receives copies of frames the recorder already produced.
 
 ## Scope
 

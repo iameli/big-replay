@@ -49,12 +49,44 @@ test('mosaic playback maps replay timestamps through the persisted start time', 
       drawImage() { draws++; },
     },
   }));
+  mosaic.visibleIndices = null;
+  mosaic.mapCameraIndices = new Set();
+  let frameImports = 0;
+  mosaic.frame = { width: 2560, height: 1080 };
+  mosaic.frameContext = { drawImage() { frameImports++; } };
 
   mosaic.sync(600, false, 1, true);
   assert.ok(Math.abs(mosaic.video.currentTime - 67.452) < 0.000001);
   assert.equal(draws, 12);
+  assert.equal(frameImports, 1);
   mosaic.sync(500, false, 1, true);
   assert.equal(clears, 12);
+});
+
+test('hidden tiles refresh only while a map camera still needs them', () => {
+  let draws = 0;
+  const mosaic = Object.create(MosaicVideo.prototype);
+  mosaic.ready = true;
+  mosaic.timelineStart = 0;
+  mosaic.targetTime = 0;
+  mosaic.video = { readyState: 2, videoWidth: 2560, videoHeight: 1080, duration: 10 };
+  mosaic.frame = { width: 2560, height: 1080 };
+  mosaic.frameContext = { drawImage() {} };
+  mosaic.tiles = Array.from({ length: 12 }, () => ({
+    button: { hidden: false },
+    canvas: { width: 640, height: 360 },
+    context: { drawImage() { draws++; } },
+  }));
+
+  mosaic.setVisibleIndices([0, 1]);
+  mosaic.setMapCameraIndices([5]);
+  assert.deepEqual(
+    mosaic.tiles.map(tile => tile.button.hidden),
+    [false, false, true, true, true, true, true, true, true, true, true, true],
+  );
+  assert.equal(mosaic.tileNeeded(5), true);
+  mosaic.draw();
+  assert.equal(draws, 3);
 });
 
 test('mosaic seek completion waits for the latest target before resuming', async () => {

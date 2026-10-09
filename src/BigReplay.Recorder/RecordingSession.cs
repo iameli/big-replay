@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using BigReplay.Live;
 using GameAccess;
 using Replay.Format;
 
@@ -7,7 +8,11 @@ namespace BigReplay.Recorder;
 public readonly record struct RecordingStatus(double ElapsedSeconds, int Players, long Frames);
 public readonly record struct RecordingResult(string? Path, long Frames);
 
-/// <summary>Shared CLI/desktop capture loop. The caller owns the read-only game handle.</summary>
+/// <summary>
+/// Shared CLI/desktop capture loop. The caller owns the read-only game handle.
+/// A <see cref="LiveSession"/>, when supplied, receives the same header, frames and events the
+/// file does, in the same order and encoding, so a live viewer sees exactly what a recording holds.
+/// </summary>
 public static class RecordingSession
 {
     private const string GameVersion = "1.5.1 2608271531";
@@ -15,7 +20,7 @@ public static class RecordingSession
 
     public static RecordingResult Record(GameStateReader reader, string outPath,
         double rate, double duration, CancellationToken cancellationToken,
-        Action<RecordingStatus>? report = null)
+        Action<RecordingStatus>? report = null, LiveSession? live = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(rate);
         if (!double.IsFinite(rate) || !double.IsFinite(duration))
@@ -39,6 +44,14 @@ public static class RecordingSession
         long frames = 0;
         int failedSamples = 0;
         var events = new List<ReplayEvent>();
+        // Every event the file records also goes to the live stream, at the same moment, so a
+        // viewer that connected mid-run sees the same history a finished replay would show.
+        void AddEvent(ReplayEvent replayEvent)
+        {
+            events.Add(replayEvent);
+            live?.PublishEvent(replayEvent);
+        }
+        string endReason = "stopped";
         double lastStatus = -1;
         var clock = Stopwatch.StartNew();
         double interval = 1.0 / rate;
@@ -62,7 +75,11 @@ public static class RecordingSession
                 next = t + interval;
                 try
                 {
-                    if (reader.Game.HasExited) break;
+                    if (reader.Game.HasExited)
+                    {
+                        endReason = "game-exited";
+                        break;
+                    }
                     bool active = reader.IsServerActive();
                     var players = reader.ReadPlayers();
 
@@ -77,16 +94,18 @@ public static class RecordingSession
 
                 if (!headerWritten && players.Count > 0)
                 {
-                    writer.WriteHeader(new ReplayHeader
+                    var header = new ReplayHeader
                     {
                         GameVersion = GameVersion,
                         UnityVersion = UnityVersion,
                         RecordedAt = DateTime.UtcNow,
                         SampleIntervalSec = interval,
                         Landmarks = landmarks,
-                    });
+                    };
+                    writer.WriteHeader(header);
+                    live?.BeginRun(header);
                     headerWritten = true;
-                    events.Add(new ReplayEvent { Time = t, Type = "run-started" });
+                    AddEvent(new ReplayEvent { Time = t, Type = "run-started" });
                 }
 
                 if (!headerWritten)
@@ -101,14 +120,14 @@ public static class RecordingSession
                 {
                     if (!prevPlayers.Contains(id))
                     {
-                        events.Add(new ReplayEvent { Time = t, Type = "player-joined", Detail = id.ToString() });
+                        AddEvent(new ReplayEvent { Time = t, Type = "player-joined", Detail = id.ToString() });
                     }
                 }
                 foreach (uint id in prevPlayers)
                 {
                     if (!nowIds.Contains(id))
                     {
-                        events.Add(new ReplayEvent { Time = t, Type = "player-left", Detail = id.ToString() });
+                        AddEvent(new ReplayEvent { Time = t, Type = "player-left", Detail = id.ToString() });
                     }
                 }
                 prevPlayers = nowIds;
@@ -116,7 +135,7 @@ public static class RecordingSession
                 int corpses = reader.ReadCorpseCount();
                 if (corpses > prevCorpses)
                 {
-                    events.Add(new ReplayEvent { Time = t, Type = "death", Detail = (corpses - prevCorpses).ToString() });
+                    AddEvent(new ReplayEvent { Time = t, Type = "death", Detail = (corpses - prevCorpses).ToString() });
                 }
                 prevCorpses = corpses;
 
@@ -124,14 +143,14 @@ public static class RecordingSession
                 {
                     if (m.Filled && !prevFilled.Contains(m.HomeName))
                     {
-                        events.Add(new ReplayEvent { Time = t, Type = "gourd-pinned", Detail = m.HomeName.ToString() });
+                        AddEvent(new ReplayEvent { Time = t, Type = "gourd-pinned", Detail = m.HomeName.ToString() });
                         var tower = BigWalkData.TowerHomes.FirstOrDefault(kv => kv.Value.Contains(m.HomeName));
                         if (tower.Key != null)
                         {
                             var group = BigWalkData.TowerHomes[tower.Key];
                             if (group.All(h => monuments.Any(mm => mm.HomeName == h && mm.Filled)))
                             {
-                                events.Add(new ReplayEvent { Time = t, Type = "tower-filled", Detail = tower.Key });
+                                AddEvent(new ReplayEvent { Time = t, Type = "tower-filled", Detail = tower.Key });
                             }
                         }
                     }
@@ -140,11 +159,11 @@ public static class RecordingSession
 
                 if (players.Count == 0 || (!active && serverWasActive))
                 {
-                    events.Add(new ReplayEvent { Time = t, Type = "run-ended" });
+                    AddEvent(new ReplayEvent { Time = t, Type = "run-ended" });
                 }
                 else if (active && !serverWasActive)
                 {
-                    events.Add(new ReplayEvent { Time = t, Type = "run-started" });
+                    AddEvent(new ReplayEvent { Time = t, Type = "run-started" });
                 }
                 serverWasActive = active;
 
@@ -171,17 +190,23 @@ public static class RecordingSession
                     }
                 }
 
-                writer.WriteFrame(new ReplayFrame
+                var frame = new ReplayFrame
                 {
                     Time = t,
                     Players = players,
                     Gourds = gourds,
                     Monuments = monuments,
-                });
+                };
+                writer.WriteFrame(frame);
+                live?.PublishFrame(frame);
                 frames++;
                 // No header is written until players arrive, so idle menus never split.
                 // Keep the final empty-player frame and its leave/end events in this replay.
-                if (players.Count == 0) break;
+                if (players.Count == 0)
+                {
+                    endReason = "run-ended";
+                    break;
+                }
                 }
                 catch (Exception ex)
                 {
@@ -196,6 +221,7 @@ public static class RecordingSession
                     if (failedSamples > Math.Max(30, rate * 30))
                     {
                         Console.Error.WriteLine("  too many failed samples; stopping.");
+                        endReason = "capture-failed";
                         break;
                     }
                 }
@@ -207,6 +233,9 @@ public static class RecordingSession
             if (headerWritten)
             {
                 writer.Finish(events);
+                // The live socket stays open: the viewer shows the finished run and waits for the
+                // next hello, which the desktop app sends when the following walk starts.
+                live?.EndRun(endReason);
             }
         }
         writer.Dispose();
