@@ -236,3 +236,28 @@ Code-level: metadata name table 168,979 → 169,413 (**+600 names, −166**). Th
   `HolsterTextChatAim`;
 - transport/auth hardening: `allowEmbeddedIPv4`, `IsStrictIPv4/IPv6`, `JoinInformationValid`,
   `GetAuthedCredentials`, `ValidateAuth`.
+
+## 9. Recorder: gourd/monument state can vanish silently (fixed in 0.1.5)
+
+Two 2026-10-24 captures (11 players × 64 min and 12 players × 75 min) contained **zero gourds and
+zero monuments in every frame** while players, positions and names were fine. The header said
+`1.5.1 2608271531`, so they came from a 1.5.1 game (the 0.1.1 installed app refuses a 1.6.0 game:
+`ImageSize` 73,736,192 vs 74,084,352). The gourd-path offsets are identical in 1.5.1 and 1.6.0
+(`Prop.saveablePropName@0xB8`, `Prop.allProps@0`, `PropHome.allPropHomes@8`), so the cause was
+**class discovery**, in `ClassDiscoverer.FindStringsNear`:
+
+- it searched for `ClassName + "\0"` and accepted *any* occurrence, including the tail of a longer
+  name (`GourdProp\0` for `Prop`, `PlayerCorpse\0` for `Corpse`);
+- it returned the first three hits, so three longer names could crowd out the genuine string;
+- those interior addresses never equal a klass name pointer, so `Prop`/`PropHome` never resolved —
+  `StaticSlot(...)` stayed 0 and the lists read as empty, **without any error or warning**.
+
+Now every hit must start a whole NUL-terminated string (byte before it is NUL) and the scan overlaps
+chunks by the needle length so boundary-straddling strings still carry context. Verified with a
+reflection harness over synthetic metadata images (`Prop` after three `…Prop` tails, `Corpse` after
+`PlayerCorpse`/`NpcCorpse`, long names unaffected, 3-hit cap preserved).
+
+Still missing: the recorder does not surface unresolved gourd classes. A recording gate that only
+requires `players.Count > 0` will happily save a 75-minute route with no gourd data. Next step:
+warn in the status line and/or append a `warning` event when `Prop`/`PropHome` are unresolved after
+N seconds.

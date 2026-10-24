@@ -104,7 +104,10 @@ public sealed class ClassDiscoveryContext
         var hits = new List<long>();
         var chunk = new byte[Chunk];
         const long range = 0x200_0000; // ±32 MB: the metadata image
-        for (long d = -range; d < range; d += Chunk)
+        // Overlap by the needle length so every hit has its preceding byte inside the chunk (needed
+        // to tell a whole string from the tail of a longer one).
+        int step = Chunk - needle.Length;
+        for (long d = -range; d < range; d += step)
         {
             long baseAddr = handle + d;
             if (baseAddr < 0x1000)
@@ -115,16 +118,41 @@ public sealed class ClassDiscoveryContext
             {
                 continue;
             }
-            int p = chunk.AsSpan().IndexOf(needle);
-            while (p >= 0)
+            foreach (int p in WholeStringHits(chunk, needle))
             {
                 hits.Add(baseAddr + p);
                 if (hits.Count >= 3)
                 {
-                    return hits.GetRange(0, 3); // a few copies suffice; keeps the ref scan fast
+                    return hits; // a few copies suffice; keeps the ref scan fast
                 }
-                p = chunk.AsSpan(p + 1).IndexOf(needle);
             }
+        }
+        return hits;
+    }
+
+    /// <summary>
+    /// Offsets of <paramref name="needle"/> occurrences that begin a whole NUL-terminated string.
+    /// Metadata names are NUL-terminated, so a hit whose preceding byte is not NUL is the tail of a
+    /// longer name — e.g. "Prop\0" inside "GourdProp\0". Those addresses are never the target of a
+    /// klass name pointer, and with a 3-hit cap they crowded out the genuine string, so short class
+    /// names (Prop, Corpse, ...) could never resolve and their state silently read as empty.
+    /// </summary>
+    internal static List<int> WholeStringHits(byte[] chunk, byte[] needle)
+    {
+        var hits = new List<int>();
+        int p = chunk.AsSpan().IndexOf(needle);
+        while (p >= 0)
+        {
+            if (p > 0 && chunk[p - 1] == 0)
+            {
+                hits.Add(p);
+                if (hits.Count >= 3)
+                {
+                    return hits;
+                }
+            }
+            int next = chunk.AsSpan(p + 1).IndexOf(needle);
+            p = next < 0 ? -1 : p + 1 + next;
         }
         return hits;
     }

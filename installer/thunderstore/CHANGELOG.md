@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5
+
+- **Fixed class discovery for short class names** — recordings could come back with players but
+  **zero gourds and zero monuments** for the entire run, silently. Discovery matched any occurrence
+  of a class's NUL-terminated name, so `Prop\0` also hit the tail of `GourdProp\0`, `FruitProp\0`,
+  …; it then stopped after three hits, and those interior addresses never point at a klass, so
+  `Prop.allProps` (gourds) and `PropHome.allPropHomes` (monuments) could never resolve. Discovery now
+  accepts only hits that begin a whole string.
+- Repinned to Big Walk 1.6.0 in 0.1.4 (build 25723723): older payloads refuse a 1.6.0 game.
+
 ## 0.1.4
 
 - Recorder repinned to Big Walk **1.6.0** (build 25723723, metadata still v39): new binary
