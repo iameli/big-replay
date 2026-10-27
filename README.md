@@ -409,10 +409,13 @@ top-level path stays available for the app. Loading a shared replay needs no sig
 the viewer resolves the account's PDS and fetches the record and blob.
 
 On your own shared replay, **Edit nicknames** saves to the published record, so
-everyone sees them; the recorded Steam names are kept alongside. Viewing someone
-else's replay shows their nicknames unless you set your own, which stay in your
-browser. **Delete shared replay** removes the record (the PDS then drops the blob);
-the replay stays open locally and can be shared again.
+everyone sees them; the recorded Steam names are kept alongside. Display precedence
+is always **published nickname → local nickname → recorded name → `Player #<netId>`**,
+regardless of sign-in state or who owns the replay. Local nicknames only fill players
+without a published nickname. On someone else's replay, published nickname fields
+are read-only; other players' local nicknames remain editable in this browser.
+**Delete shared replay** removes the record (the PDS then drops the blob); the
+replay stays open locally and can be shared again.
 
 The OAuth client asks only for `repo:com.iameli.bigWalk.replay` and blob uploads.
 `vendor/atproto-oauth.js` is a committed bundle of `@atproto/oauth-client-browser`;
@@ -530,13 +533,15 @@ editor lists all of them (e.g. `xCape · #590, #592`). Same-named players who ar
 ever present together stay separate.
 
 Click **Edit nicknames** to reveal the nickname fields, Reset buttons, and editing
-help. Enter a **Nickname**, then press **Enter** or leave the field to save it
-locally. **Done** saves the current field and hides the editors again; colors remain
+help. Enter a **Nickname**, then press **Enter** or leave the field to save it.
+Edits save locally except on your own shared replay, where they update its record.
+**Done** saves the current field and hides the editors again; colors remain
 available in the compact list. The editors start hidden each time the viewer opens.
 Nicknames appear on the map, in join/leave events, and in alignment source choices.
-Use **Reset**, or save an empty field, to restore the recorded name. Existing
-calibration-reference captions remain historical descriptions captured when those
-references were placed.
+Use **Reset**, or save an empty field, to remove the nickname being edited and use
+the next available name. Removing your published nickname can reveal an existing
+local nickname. Existing calibration-reference captions remain historical
+descriptions captured when those references were placed.
 
 Nicknames are matched by the **exact recorded username** when it is unique in the
 replay, so they follow that name across recordings even if its network ID changes.
@@ -547,9 +552,10 @@ start timestamp and network ID. Older files without that timestamp use a file
 hash, so their nicknames persist for the same file without leaking to unrelated
 unnamed players.
 
-Nicknames are stored only in this browser, not uploaded or written into replay
-files or shared links. If browser storage is unavailable, changes work for the
-current session and the settings show a warning.
+Local nicknames stay in this browser and are not automatically uploaded or written
+into replay files. Published nicknames live in the shared record instead. If browser
+storage is unavailable, local changes work for the current session and the settings
+show a warning.
 
 The 12-color palette is Sky, Coral, Mint, Gold, Violet, Cyan,
 Orange, Pink, Lime, Ivory, Rose, and Slate. Players receive distinct initial colors

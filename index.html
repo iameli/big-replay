@@ -128,6 +128,7 @@
   .player-color select { min-width: 0; width: 100%; }
   .player-nickname { grid-column: 2 / -1; gap: 6px; min-width: 0; }
   .player-nickname input { flex: 1; min-width: 0; width: 0; font: inherit; }
+  .player-nickname input[readonly] { opacity: .65; }
   .player-nickname .btn { flex: none; }
   .player-nickname, #nickname-help, #nickname-status { display: none; }
   .editing-nicknames .player-nickname { display: flex; }
@@ -371,10 +372,10 @@
     <div class="section-body">
     <p>Choosing an assigned color swaps the two players. Markers and trails change together.</p>
     <button class="btn" id="edit-nicknames" type="button" aria-expanded="false" aria-controls="player-colors nickname-help nickname-status" disabled>Edit nicknames</button>
-    <p id="nickname-help">Nicknames save when you press Enter or leave the field. Reset restores the recorded name.</p>
+    <p id="nickname-help">Nicknames save when you press Enter or leave the field. Published nicknames take priority. Reset removes the nickname saved here.</p>
     <div id="player-colors"></div>
     <p id="color-status" role="status">Load a replay to assign colors.</p>
-    <p id="nickname-status" role="status">Nicknames are stored only in this browser.</p>
+    <p id="nickname-status" role="status">Local nicknames apply only when no published nickname exists.</p>
     </div>
   </details>
   <details class="sidebar-section" id="tower-section" open>
@@ -629,16 +630,13 @@ function gourdColor(name) {
   return PURPLE_GOURD_IDS.has(name) ? "#8053ac" : "#c64132";
 }
 
-// On your own shared replay, nicknames live in the published record. Elsewhere,
-// this browser's nicknames win over the uploader's.
+// Editing your own shared replay saves to its published record.
 function nicknamesSaveToRecord() {
   return !!shared && account.did === shared.did;
 }
 
 function playerNickname(netId) {
-  const recorded = shared?.nicknames.get(netId);
-  if (nicknamesSaveToRecord()) return recorded;
-  return savedPlayerNicknames.get(playerNicknameKeys.get(netId)) || recorded;
+  return shared?.nicknames.get(netId) || savedPlayerNicknames.get(playerNicknameKeys.get(netId));
 }
 
 function playerLabel(netId) {
@@ -650,8 +648,8 @@ function orderedPlayerIds() {
 }
 
 function nicknameStatusText() {
-  if (nicknamesSaveToRecord()) return "Nicknames save to your shared replay, so everyone with the link sees them.";
-  if (shared) return "The uploader's nicknames are shown unless you set your own here; yours stay in this browser.";
+  if (nicknamesSaveToRecord()) return "Nicknames save to your shared replay for everyone. Local nicknames fill players without a published nickname.";
+  if (shared) return "Published nicknames take priority; local nicknames fill only players without one.";
   return "Unique recorded names share nicknames across replays; duplicate or unnamed players stay recording-specific.";
 }
 
@@ -937,8 +935,12 @@ function renderPlayerSettings() {
     nickname.autocomplete = "off";
     nickname.spellcheck = false;
     const toRecord = nicknamesSaveToRecord();
-    nickname.placeholder = (!toRecord && shared?.nicknames.get(id)) || "Nickname";
-    nickname.value = (toRecord ? shared.nicknames.get(id) : savedPlayerNicknames.get(playerNicknameKeys.get(id))) || "";
+    const serverNickname = shared?.nicknames.get(id);
+    const serverOnly = !toRecord && !!serverNickname;
+    nickname.placeholder = "Nickname";
+    nickname.value = (toRecord || serverOnly ? serverNickname : savedPlayerNicknames.get(playerNicknameKeys.get(id))) || "";
+    nickname.readOnly = serverOnly;
+    if (serverOnly) nickname.title = "Published nickname. Local nicknames apply only when no published nickname exists.";
     nickname.setAttribute("aria-label", `Nickname for ${recordedName} (#${id})`);
     nickname.dataset.playerId = id;
     const reset = document.createElement("button");
@@ -946,8 +948,9 @@ function renderPlayerSettings() {
     reset.className = "btn";
     reset.textContent = "Reset";
     reset.setAttribute("aria-label", `Reset nickname for ${recordedName} (#${id})`);
-    reset.disabled = !nickname.value;
+    reset.disabled = serverOnly || !nickname.value;
     const commitNickname = () => {
+      if (serverOnly) return;
       const value = nickname.value.trim(), key = playerNicknameKeys.get(id);
       nickname.value = value;
       if (nicknamesSaveToRecord()) {
@@ -968,7 +971,7 @@ function renderPlayerSettings() {
       const nicknameStatus = document.getElementById("nickname-status");
       nicknameStatus.classList.toggle("storage-error", !persisted);
       nicknameStatus.textContent = persisted
-        ? value ? "Nickname saved in this browser." : "Nickname removed; using the recorded name."
+        ? value ? "Nickname saved in this browser." : "Local nickname removed."
         : "Storage unavailable; nickname changes last only this session.";
       refreshPlayerLabels();
     };
