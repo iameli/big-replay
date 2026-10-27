@@ -99,8 +99,6 @@
   .legend { font-size: 11px; color: #8fa3bd; padding: 2px 12px; display: flex; gap: 14px; flex-wrap: wrap; }
   .legend span { display: inline-flex; align-items: center; gap: 4px; }
   .legend svg { width: 20px; height: 26px; overflow: visible; }
-  .legend .lg-land::before { content: ""; display: inline-block; border: 2px solid #10131a; }
-  .lg-land::before { background: #6f7f96; width: 4px !important; height: 4px !important; }
   #map { touch-action: none; cursor: grab; }
   #map.placing { cursor: crosshair; }
   #map-tools { position: absolute; bottom: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 12px; pointer-events: none; }
@@ -336,7 +334,7 @@
     <span><svg viewBox="0 0 20 26" aria-hidden="true">
       <circle cx="10" cy="13" r="3" fill="none" stroke="#10131a" stroke-width="2.5"/>
       <circle cx="10" cy="13" r="3" fill="none" stroke="#aab8cc" stroke-width="0.9"/>
-    </svg>empty receptacle</span><span class="lg-land">landmark</span>
+    </svg>empty receptacle</span>
   </div>
   </details>
   <details class="sidebar-section" id="video-section">
@@ -1972,16 +1970,6 @@ function render() {
   if (!replay || !mapView.transform || mapView.editing) return;
   const fr = frames[frameIdx];
   if (!fr) return;
-  const h = replay.header;
-  // landmarks
-  ctx.fillStyle = "#aab8cc";
-  ctx.strokeStyle = "#10131a";
-  ctx.lineWidth = 2.5;
-  for (const l of (h.landmarks || [])) {
-    const [sx, sy] = toScreen(l.x, l.z);
-    ctx.fillRect(sx - 3, sy - 3, 6, 6);
-    ctx.strokeRect(sx - 3, sy - 3, 6, 6);
-  }
 
   const occupants = receptacles.at(frameIdx);
 

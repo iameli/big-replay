@@ -433,6 +433,9 @@ state. Carried-gourd icons use the same color as the corresponding world gourd.
 Locked gourds remain slightly faded; sleepy players are labeled. Existing replays
 need no format changes. Review the ID mapping when supporting a new game build.
 
+Recorded landmarks are available as references under **Map alignment**, but are
+not drawn as standalone map markers.
+
 The viewer includes **45 fixed gourd receptacles** measured from the completed
 1.5.1 reconciled 12-player recording: Tutorial **4**, Red (west), Green (south),
 Blue (east), and Yellow (north) **5 each**, Black **6**, and Storage **15**.
@@ -660,8 +663,9 @@ reference. Neither locking nor editing changes the recording.
    incorrect references.
 
 Calibration supports rotation, axis reversal, independent scale, and shear.
-Players, trails, gourds, and landmarks all use the same world → image → screen
-transform. Hovering reports image pixels and, once calibrated, world X/Z.
+Players, trails, gourds, and placed calibration references use the same
+world → image → screen transform. Hovering reports image pixels and, once
+calibrated, world X/Z.
 The map is top-down: Y/height is not projected.
 
 The locked transform and any reference points persist in browser local storage
