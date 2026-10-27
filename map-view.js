@@ -2,6 +2,10 @@
 
 // Image pixels are the stable intermediate space; viewport changes never change calibration.
 const MAP_SIZE = 4096;
+// Satellite crop uses original bigmap coordinates, preserving browser calibrations.
+const MAP_TOP = -3500;
+const MAP_HEIGHT = MAP_SIZE - MAP_TOP;
+const BASEMAP_STORAGE = "big-walk:basemap:v1";
 const MAP_STORAGE = "big-walk:bigmap-4096:calibration:v1";
 const ROUTE_BLOCK_SIZE = 256;
 const TRAIL_TILE_SIZE = 256; // Device pixels; the halo is cropped when compositing.
@@ -99,18 +103,50 @@ class MapView {
     this.status = document.getElementById("alignment-status");
     this.sourceSelect = document.getElementById("anchor-source");
     this.placeButton = document.getElementById("place-anchor");
-    this.image = new Image();
-    this.image.onload = () => { this.ready = true; this.updateUI(); redraw(); };
-    this.image.onerror = () => {
-      this.status.textContent = "Map unavailable. Keep bigmap.jpeg beside index.html.";
+    this.basemap = "map";
+    this.basemapButtons = [...document.querySelectorAll("#basemap-toggle [data-basemap]")];
+    const imageryStatus = document.getElementById("basemap-status");
+    const missingImages = new Set();
+    const imageFailed = filename => {
+      missingImages.add(filename);
+      imageryStatus.textContent = `Imagery unavailable: ${[...missingImages].join(", ")}. Keep these files beside index.html.`;
+      imageryStatus.hidden = false;
     };
+    this.image = new Image();
+    this.image.onload = () => {
+      this.mapReady = this.ready = true;
+      this.updateUI();
+      redraw();
+    };
+    this.image.onerror = () => imageFailed("bigmap.jpeg");
     this.image.src = "bigmap.jpeg";
+    this.satellite = new Image();
+    this.satellite.onload = () => {
+      this.satelliteReady = this.ready = true;
+      this.updateUI();
+      redraw();
+    };
+    this.satellite.onerror = () => imageFailed("satellite.jpeg");
+    this.satellite.src = "satellite.jpeg";
+    try {
+      const saved = localStorage.getItem(BASEMAP_STORAGE);
+      if (saved === "map" || saved === "satellite") this.basemap = saved;
+    } catch { /* Imagery remains selectable when browser storage is unavailable. */ }
+    for (const button of this.basemapButtons) {
+      button.addEventListener("click", () => {
+        this.cancelZoomPreview();
+        this.basemap = button.dataset.basemap;
+        try { localStorage.setItem(BASEMAP_STORAGE, this.basemap); } catch { /* session-only */ }
+        this.updateUI();
+        redraw();
+      });
+    }
     try {
       const saved = JSON.parse(localStorage.getItem(MAP_STORAGE));
       const points = Array.isArray(saved) ? saved : saved?.points;
       if (Array.isArray(points) && points.length <= 3 && points.every(p =>
         typeof p.label === "string" && [p.x, p.z, p.u, p.v].every(Number.isFinite) &&
-        p.u >= 0 && p.u <= MAP_SIZE && p.v >= 0 && p.v <= MAP_SIZE)) {
+        p.u >= 0 && p.u <= MAP_SIZE && p.v >= MAP_TOP && p.v <= MAP_SIZE)) {
         const t = points.length ? solveCalibration(points) : saved.transform;
         if (t && (![t.xx, t.xz, t.yx, t.yz, t.tx, t.ty].every(Number.isFinite) ||
             Math.abs(t.xx * t.yz - t.xz * t.yx) < 1e-12)) throw new Error("Invalid alignment");
@@ -159,6 +195,9 @@ class MapView {
   }
 
   updateUI() {
+    for (const button of this.basemapButtons) {
+      button.setAttribute("aria-pressed", String(button.dataset.basemap === this.basemap));
+    }
     this.status.textContent = this.editing
       ? "Adjusting full route · preview only. Match the track, then lock alignment."
       : this.pending
@@ -330,8 +369,11 @@ class MapView {
 
   viewport() {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    const scale = Math.min(w, h) / MAP_SIZE * this.zoom;
-    return { scale, ox: (w - MAP_SIZE * scale) / 2 + this.panX, oy: (h - MAP_SIZE * scale) / 2 + this.panY };
+    const scale = Math.min(w / MAP_SIZE, h / MAP_HEIGHT) * this.zoom;
+    return {
+      scale, ox: (w - MAP_SIZE * scale) / 2 + this.panX,
+      oy: (h - MAP_HEIGHT * scale) / 2 - MAP_TOP * scale + this.panY,
+    };
   }
 
   imageToScreen(u, v) {
@@ -611,7 +653,7 @@ class MapView {
     return JSON.stringify([
       this.canvas.width, this.canvas.height, this.canvas.clientWidth, this.canvas.clientHeight,
       rx, ry, scale, t && [t.xx, t.xz, t.yx, t.yz, t.tx, t.ty],
-      !!this.ready, mode, !!this.editing,
+      !!this.ready, !!this.mapReady, !!this.satelliteReady, this.basemap, mode, !!this.editing,
       this.routes.map(route => this.playerColor(route.netId)),
       this.points.map(point => [point.u, point.v]),
     ]);
@@ -719,11 +761,20 @@ class MapView {
     return resource;
   }
 
+  drawBasemap(ctx, scale, ox = 0, oy = 0) {
+    if (this.satelliteReady) {
+      ctx.drawImage(this.satellite, ox, oy + MAP_TOP * scale, MAP_SIZE * scale, MAP_HEIGHT * scale);
+    }
+    if (this.mapReady && this.basemap === "map") {
+      ctx.drawImage(this.image, ox, oy, MAP_SIZE * scale, MAP_SIZE * scale);
+    }
+  }
+
   drawMap(ctx) {
     const { scale, ox, oy } = this.viewport();
     ctx.fillStyle = "#172e3a";
     ctx.fillRect(0, 0, this.canvas.clientWidth, this.canvas.clientHeight);
-    if (this.ready) ctx.drawImage(this.image, ox, oy, MAP_SIZE * scale, MAP_SIZE * scale);
+    this.drawBasemap(ctx, scale, ox, oy);
   }
 
   drawReferences(ctx, anchored = false) {
@@ -747,7 +798,7 @@ class MapView {
     ctx.fillStyle = "#172e3a";
     ctx.fillRect(0, 0, cache.side, cache.side);
     ctx.setTransform(cache.rx, 0, 0, cache.ry, cache.halo - tile.x, cache.halo - tile.y);
-    if (this.ready) ctx.drawImage(this.image, 0, 0, MAP_SIZE * scale, MAP_SIZE * scale);
+    this.drawBasemap(ctx, scale);
     if (mode !== "full") this.drawReferences(ctx, true);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const scratch = cache.scratch.getContext("2d");
@@ -946,7 +997,7 @@ class MapView {
         return;
       }
       const [u, v] = this.screenToImage(...local(e));
-      if (u < 0 || v < 0 || u > MAP_SIZE || v > MAP_SIZE) {
+      if (u < 0 || v < MAP_TOP || u > MAP_SIZE || v > MAP_SIZE) {
         this.status.textContent = "Click inside the map image, not the surrounding margin.";
         return;
       }

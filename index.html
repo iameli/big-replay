@@ -107,6 +107,7 @@
   #map-tools button { pointer-events: auto; }
   #coordinates { background: #10131adb; padding: 5px 8px; font: 11px monospace; }
   #alignment p, #anchor-list { font-size: 11px; color: #aab8cc; }
+  #basemap-status { font-size: 11px; color: #f2d18a; margin: 6px 12px; }
   #alignment-status { color: #f2d18a !important; }
   #anchor-source { width: 100%; margin: 5px 0 8px; background: #232b3a; color: #dfe5ee; padding: 5px; }
   #anchor-list { list-style: none; padding: 0; overflow-wrap: anywhere; }
@@ -138,7 +139,7 @@
   #live-section p { margin: 6px 0; color: #aab8cc; font-size: 11px; overflow-wrap: anywhere; }
   #layout-picker { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
   #layout-picker .btn { min-width: 0; padding: 6px 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #layout-picker .btn[aria-pressed=true] { border-color: #56b4ff; background: #263b55; color: #fff; }
+  #layout-picker .btn[aria-pressed=true], #basemap-toggle .btn[aria-pressed=true] { border-color: #56b4ff; background: #263b55; color: #fff; }
   #layout-map { grid-column: 1 / -1; }
   #layout-save-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-top: 10px; }
   #layout-name { min-width: 0; width: 100%; background: #232b3a; color: #dfe5ee; border: 1px solid #526675; border-radius: 4px; padding: 5px; font: inherit; }
@@ -307,6 +308,12 @@
   </details>
   <details class="sidebar-section" id="map-display-section" open>
     <summary>Map display</summary>
+  <div class="row" id="basemap-toggle" role="group" aria-label="Basemap">
+    <span>Imagery</span>
+    <button class="btn" type="button" data-basemap="map" aria-pressed="true">Map</button>
+    <button class="btn" type="button" data-basemap="satellite" aria-pressed="false">Satellite</button>
+  </div>
+  <p id="basemap-status" role="status" hidden></p>
   <div class="row">
     <label for="trail-mode">Trails</label>
     <select id="trail-mode">

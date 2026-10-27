@@ -9,7 +9,7 @@ Big Replay is a tool for recording character positions in Big Walk and playing t
 - `src/BigReplay.Recorder/` — CLI + shared capture loop: sample at N Hz, write replay file.
 - `src/BigReplay.Desktop/` — native Windows GUI: watch for the game and record automatically.
 - `schemas/` — JSON Schema for replay files (the contract the web front-end validates against).
-- `index.html`, `map-view.js`, `gourd-receptacles.js`, `bigmap.jpeg` — root-level replay viewer and map assets.
+- `index.html`, `map-view.js`, `gourd-receptacles.js`, `bigmap.jpeg`, `satellite.jpeg` — root-level replay viewer and map assets.
 - `atproto.js`, `oauth-client-metadata.json`, `vendor/` — Atmosphere sign-in and replay sharing for the viewer.
 - `lexicons/` — atproto lexicons (`com.iameli.bigWalk.*`) for shared replays.
 - `docs/` — format spec + the read-only/no-writes trust story.
@@ -184,8 +184,8 @@ remain unchanged.
 
 For offline use, open the root `index.html` from a checkout. Keep
 `atproto-record.js`, `source-video-sync.js`, `playback-layout.js`,
-`mosaic-video.js`, `live-client.js`, `map-view.js`, `gourd-receptacles.js`, and
-`bigmap.jpeg` beside it. No build or package install is needed.
+`mosaic-video.js`, `live-client.js`, `map-view.js`, `gourd-receptacles.js`,
+`bigmap.jpeg`, and `satellite.jpeg` beside it. No build or package install is needed.
 Alternatively, serve the repository root with a static HTTP server and
 open `/?replay=run1.replay.json.gz`.
 
@@ -198,7 +198,22 @@ Browser-saved calibration and display preferences are per origin; settings from
 the former `github.io` site do not automatically transfer to the custom domain.
 
 Drag the map to pan, scroll or pinch to zoom around the cursor, and use **Fit map**
-to reset the view. Trackpad pinch has higher sensitivity than ordinary scrolling.
+to fit the entire island, including the north. Trackpad pinch has higher sensitivity
+than ordinary scrolling.
+
+Under **Map display → Imagery**, choose **Map** (the default) or **Satellite**.
+Satellite shows the aligned Unity screenshot across the whole island. Map overlays
+the game's illustrated `bigmap.jpeg` on the southern region; the uncharted north
+still uses satellite imagery. The choice is remembered in this browser and does
+not change pan, zoom, calibration, markers, or trails.
+
+The satellite asset is a **4096 × 7596 JPEG** at the illustrated map's pixel scale.
+It starts at `(0, -3500)` in original map coordinates; the illustrated map remains
+at `(0, 0)`. This preserves existing saved calibrations without migration. Northern
+reference points and hover coordinates can therefore have negative image y values.
+Both images are bundled with the website and the recorder's local viewer. Missing
+imagery is reported under the imagery toggle.
+
 Playback starts paused; the timeline selects exact recorded frames. Playback and
 the clock use recorded timestamps rather than assuming uniform samples.
 Play/pause, the wide timeline, the current time, and playback-speed buttons sit in
@@ -484,10 +499,11 @@ scratch, and retained tiles. Large viewports use evictable scene tiles instead o
 an oversized scene bitmap. Markers and labels use a separate **16 MiB / 256-entry**
 sprite cache at the display pixel ratio; oversized labels render uncached rather
 than truncating names. These budgets do not include replay/geometry data, the
-decoded source map, or browser overhead.
+decoded source images (about **183 MiB RGBA** for both basemaps), or browser overhead.
 
 Backward seeks, zoom, resizing or pixel-ratio changes, alignment edits, color
-changes, and trail-mode changes rebuild the relevant cached pixels. Cold views,
+changes, basemap/image availability changes, and trail-mode changes rebuild the
+relevant cached pixels. Cold views,
 large jumps into uncached areas, and seeks can still take longer than steady
 playback or warm panning. Loading another replay releases the previous bitmaps.
 Recorded positions and replay files are unchanged.
@@ -541,6 +557,63 @@ same player color.
 Color choices are stored in this browser by netId, not runner identity. Reassign
 them with the dropdowns when roles or player IDs change between recordings.
 These display preferences do not modify replay files.
+
+### Preparing an expanded map image
+
+`scripts/align-map.py` aligns a high-resolution island screenshot to
+`bigmap.jpeg` using matched landmarks. It fits rotation, uniform scale, and
+translation by least squares across **all** pairs; it does not reflect, shear,
+warp perspective, or automatically discard outliers.
+
+Collect at least three pairs, preferably 6–12 spread across the overlap rather
+than clustered or in a line. Use identifiable ground-level features: tall
+objects may shift with camera perspective. Coordinates must be from the
+**original, unresized images**, measured from the top-left, x right and y down.
+Save a CSV with this header, followed by one row per landmark:
+
+```csv
+label,screenshot_x,screenshot_y,map_x,map_y
+```
+
+On Windows, set up the isolated image tooling and run it from the repository root:
+
+```powershell
+py -3 -m venv out/map-tools-venv
+.\out\map-tools-venv\Scripts\python.exe -m pip install Pillow
+.\out\map-tools-venv\Scripts\python.exe scripts/align-map.py "C:\path\big-screenshot-8x.png" landmarks.csv --output-dir out/map-alignment
+```
+
+Outputs:
+
+- `aligned.png`: transparent PNG, **4096 pixels wide** by default. `--framing full`
+  (the default) includes the entire rotated screenshot and the reference map's
+  extent, then scales both axes equally to fit the requested width. Height follows
+  the resulting bounds, rounded up.
+- `overlap.png`: half-opacity screenshot over the original map, **in original map
+  coordinates**, independent of export framing. Cyan circles are reference
+  positions, magenta circles are transformed screenshot positions, and yellow
+  lines show residuals. Numbers correspond to CSV row order.
+- `alignment.json`: transforms, output bounds, scale/rotation, RMS and maximum
+  errors in original map pixels, and per-landmark errors. Large or systematic
+  residuals can indicate a bad pairing or a camera/map mismatch; inspect the
+  overlay before accepting the result.
+
+Use `--framing map` to keep the original map's horizontal extent instead. With
+the 4096-wide reference and default output width, this preserves its pixel scale
+and x coordinates, extending vertically as needed; screenshot content outside
+that horizontal strip is clipped. Full framing avoids clipping but may change
+pixel scale and x origin. Both modes record `map_to_output` so the existing
+world-to-map calibration can be composed with the export transform.
+
+This is an offline preparation tool: it does **not** replace bundled imagery or
+change viewer calibration. The bundled `satellite.jpeg` was generated from the
+aligned screenshot with original-map crop bounds `(0, -3500)` to `(4096, 4096)`,
+then exported as JPEG without further resizing. Corner sky and transparent padding
+are filled with the screenshot's sampled ocean blue (`#2f5179`); pixels inside the
+retained ocean plane are unchanged before JPEG encoding. The six supplied landmark pairs
+fit a **45.00068° clockwise rotation** and **0.786420951× scale**, with **1.25 px RMS**
+residual in original map pixels. Viewer bounds and the satellite drawing offset
+in `map-view.js` match that crop; changing the crop requires updating both.
 
 ### Aligning world coordinates
 

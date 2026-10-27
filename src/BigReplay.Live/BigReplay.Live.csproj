@@ -21,6 +21,7 @@
     <EmbeddedResource Include="..\..\map-view.js" LogicalName="viewer/map-view.js" />
     <EmbeddedResource Include="..\..\gourd-receptacles.js" LogicalName="viewer/gourd-receptacles.js" />
     <EmbeddedResource Include="..\..\bigmap.jpeg" LogicalName="viewer/bigmap.jpeg" />
+    <EmbeddedResource Include="..\..\satellite.jpeg" LogicalName="viewer/satellite.jpeg" />
     <EmbeddedResource Include="..\..\logo.svg" LogicalName="viewer/logo.svg" />
     <EmbeddedResource Include="..\..\favicon.ico" LogicalName="viewer/favicon.ico" />
     <EmbeddedResource Include="..\..\site.webmanifest" LogicalName="viewer/site.webmanifest" />
