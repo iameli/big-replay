@@ -7,15 +7,15 @@ Repos in play:
 
 | Repo | Local path (this machine) | GitHub | Role |
 | --- | --- | --- | --- |
-| `big-replay` | `C:\Users\iameli\code\big-replay` | `iameli/big-replay` | Recorder, desktop app, viewer, packaging |
-| mods repo | `C:\Users\iameli\code\big-walk-speedrun-tools` | **`iameli/big-walk-practice`** | BepInEx plugins incl. `mods/BigWalk.ReplayLauncher` |
+| `big-replay` | `C:\Users\iameli\code\big-replay` | `iameli/big-replay` | Recorder, desktop app, viewer, launcher plugin, packaging |
 
-Note the name mismatch: the local dir is `big-walk-speedrun-tools`, the GitHub repo is
-`big-walk-practice`. CI and the packaging script depend on this.
+The launcher plugin lives in this repo at `src/BigWalk.ReplayLauncher/`. The old
+`iameli/big-walk-practice` repo is no longer checked out by CI; it remains only as the
+host of the `practice-canary` `build-refs.zip` reference assemblies.
 
 ## 1. What this session delivered
 
-1. **Launcher plugin** — `mods/BigWalk.ReplayLauncher` (mods repo). Launcher-only BepInEx plugin:
+1. **Launcher plugin** — `src/BigWalk.ReplayLauncher`. Launcher-only BepInEx plugin:
    no patches, no game reads. On load it resolves `<profile>/BigReplay/BigReplay.exe` and starts
    it with `--exit-with-game <game pid> --grace <N>`. Config surface is deliberately tiny:
    `Enabled` (bool) and `GraceSeconds` (int 0–600, default 25). **There is intentionally no
@@ -36,12 +36,11 @@ Note the name mismatch: the local dir is `big-walk-speedrun-tools`, the GitHub r
    Package metadata: name `Big_Replay` (renders as "Big Replay"), deps
    `BepInEx-BepInExPack_IL2CPP-6.0.755`, author/team `iameli`, version from the Desktop csproj.
    Package assets live in `installer/thunderstore/` (README + CHANGELOG).
-4. **CI packaging** — `.github/workflows/release.yml` (push to `next`) now also builds the
+4. **CI packaging** — `.github/workflows/release.yml` (push to `next`) also builds the
    package and attaches it to the GitHub release next to `BigReplay-Setup.exe` and
-   `BigReplay-win-x64.zip`. It checks out `iameli/big-walk-practice@main` into `mods-repo`,
-   downloads `build-refs.zip` from that repo's `practice-canary` release, builds the launcher
-   with `/p:GamePath=$GITHUB_WORKSPACE/ci-refs`, runs the packaging script, then uploads.
-   **This path has not executed yet — watch the first CI run.**
+   `BigReplay-win-x64.zip`. It downloads `build-refs.zip` from the mods repo's
+   `practice-canary` release, builds `src/BigWalk.ReplayLauncher` with
+   `/p:GamePath=$GITHUB_WORKSPACE/ci-refs`, runs the packaging script, then uploads.
 5. **Docs/site corrections** — all host-only claims removed (any player in the lobby can record;
    state is replicated to every client): `README.md`, `docs/trust.md`, `PLAN.md`,
    `RecorderForm` hint text, CLI doc comment, release notes, launcher README.
@@ -50,8 +49,8 @@ Note the name mismatch: the local dir is `big-walk-speedrun-tools`, the GitHub r
 ## 2. Commands cheat-sheet
 
 ```powershell
-# launcher plugin (mods repo; needs BepInEx core+interop under <profile>)
-dotnet build mods/BigWalk.ReplayLauncher/BigWalk.ReplayLauncher.csproj -c Release `
+# launcher plugin (needs BepInEx core+interop under <profile>)
+dotnet build src/BigWalk.ReplayLauncher/BigWalk.ReplayLauncher.csproj -c Release `
   "/p:GamePath=C:\Users\iameli\AppData\Roaming\r2modmanPlus-local\BigWalk\profiles\NewProfile"
 
 # desktop app + package (big-replay)
@@ -146,7 +145,8 @@ Start Modded → crash at generation; restore the folder → boots.
 
 1. **Laptop fresh-install data point** (interop generation on another machine) — decides whether
    we ship seeded interop.
-2. **First CI run** of the new packaging steps (codesign/refs URL/`gh release create` asset list).
+2. **First successful CI run** of the packaging steps; the first attempt failed because the
+   launcher source was missing, which is why it now lives in this repo.
 3. Optional: `tcli` auto-publish to Thunderstore from CI with a service token.
 4. When the group adopts a new game build: regenerate `manifest.json` (ManifestGen) **and**
    regenerate/refresh any seeded interop; both are version-locked.
@@ -157,7 +157,7 @@ Start Modded → crash at generation; restore the folder → boots.
 
 ## 7. File map (what to read first)
 
-- `mods/BigWalk.ReplayLauncher/Plugin.cs` (mods repo) — the whole launcher; ~130 lines.
+- `src/BigWalk.ReplayLauncher/Plugin.cs` — the whole launcher; ~130 lines.
 - `src/BigReplay.Desktop/Program.cs` — CLI parsing (`--exit-with-game`, `--grace`) + mutex.
 - `src/BigReplay.Desktop/RecorderForm.cs` — watchdog (`ExitWatcherAsync`, `GraceElapsedAsync`,
   `IsGameAlive`), monitoring loop, graceful save-and-close path.

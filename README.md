@@ -8,6 +8,7 @@ Big Replay is a tool for recording character positions in Big Walk and playing t
 - `src/GameAccess/` — read-only process access, manifest-backed memory readers, game model.
 - `src/BigReplay.Recorder/` — CLI + shared capture loop: sample at N Hz, write replay file.
 - `src/BigReplay.Desktop/` — native Windows GUI: watch for the game and record automatically.
+- `src/BigWalk.ReplayLauncher/` — BepInEx plugin for modded launches: starts the desktop app and lets it exit with the game (the Thunderstore payload).
 - `schemas/` — JSON Schema for replay files (the contract the web front-end validates against).
 - `index.html`, `map-view.js`, `gourd-receptacles.js`, `bigmap.jpeg`, `satellite.jpeg` — root-level replay viewer and map assets.
 - `atproto.js`, `oauth-client-metadata.json`, `vendor/` — Atmosphere sign-in and replay sharing for the viewer.
