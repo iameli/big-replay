@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AssemblyName>BigWalk.ReplayLauncher</AssemblyName>
+    <RootNamespace>BigWalk.ReplayLauncher</RootNamespace>
+    <Version>0.1.1</Version>
+    <Description>Starts Big Replay alongside a modded Big Walk launch.</Description>
+  </PropertyGroup>
+
+  <!--
+    BepInEx assemblies do not ship with the game. Point GamePath at an r2modman
+    profile (or an unpacked build-refs snapshot) that has BepInEx installed;
+    CI passes /p:GamePath=ci-refs.
+  -->
+  <PropertyGroup>
+    <GamePath Condition="'$(GamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Big Walk</GamePath>
+    <BepInExCore>$(GamePath)\BepInEx\core</BepInExCore>
+  </PropertyGroup>
+
+  <ItemGroup Label="BepInEx">
+    <Reference Include="BepInEx.Core"><HintPath>$(BepInExCore)\BepInEx.Core.dll</HintPath></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(BepInExCore)\BepInEx.Unity.IL2CPP.dll</HintPath></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(BepInExCore)\Il2CppInterop.Runtime.dll</HintPath></Reference>
+    <Reference Include="Il2CppInterop.Common"><HintPath>$(BepInExCore)\Il2CppInterop.Common.dll</HintPath></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Never copy loader/game assemblies into the package; BepInEx supplies them. -->
+    <Reference Update="@(Reference)"><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>

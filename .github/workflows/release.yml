@@ -53,14 +53,6 @@ jobs:
           & $compiler "/DAppVersion=0.1.$env:GITHUB_RUN_NUMBER" installer/BigReplay.iss
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
 
-      - name: Check out the mods repo (launcher plugin source)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: iameli/big-walk-practice
-          ref: main
-          path: mods-repo
-          persist-credentials: false
-
       - name: Download BepInEx reference assemblies
         run: |
           $refs = Join-Path $env:GITHUB_WORKSPACE 'ci-refs'
@@ -70,12 +62,12 @@ jobs:
 
       - name: Build the Replay Launcher plugin
         run: >
-          dotnet build mods-repo/mods/BigWalk.ReplayLauncher/BigWalk.ReplayLauncher.csproj
+          dotnet build src/BigWalk.ReplayLauncher/BigWalk.ReplayLauncher.csproj
           -c Release "/p:GamePath=$env:GITHUB_WORKSPACE/ci-refs"
 
       - name: Build the Thunderstore package
         run: |
-          ./scripts/package-thunderstore.ps1 -PluginDll "mods-repo/mods/BigWalk.ReplayLauncher/bin/Release/BigWalk.ReplayLauncher.dll"
+          ./scripts/package-thunderstore.ps1 -PluginDll "src/BigWalk.ReplayLauncher/bin/Release/BigWalk.ReplayLauncher.dll"
 
       - name: Publish latest release
         env:

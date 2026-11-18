@@ -31,8 +31,8 @@ param(
     [string]$Description = 'Auto-starts the standalone Big Replay recorder next to a modded Big Walk launch (read-only; not for validated runs).',
     [string]$Dependency = 'BepInEx-BepInExPack_IL2CPP-6.0.755',
     [string]$DesktopPayload = 'dist/BigReplay',
-    [string]$PluginDll = '..\big-walk-speedrun-tools\mods\BigWalk.ReplayLauncher\bin\Release\BigWalk.ReplayLauncher.dll',
-    [string]$PluginProject = '..\big-walk-speedrun-tools\mods\BigWalk.ReplayLauncher\BigWalk.ReplayLauncher.csproj',
+    [string]$PluginDll = 'src\BigWalk.ReplayLauncher\bin\Release\BigWalk.ReplayLauncher.dll',
+    [string]$PluginProject = 'src\BigWalk.ReplayLauncher\BigWalk.ReplayLauncher.csproj',
     [string]$Profile = "$env:APPDATA\r2modmanPlus-local\BigWalk\profiles\Default",
     [string]$OutputDir = 'dist'
 )
