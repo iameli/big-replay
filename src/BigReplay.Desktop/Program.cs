@@ -13,13 +13,17 @@ internal static class Program
         // --live-port N / --live-bind ADDRESS / --no-live
         //   Live replay sharing is on by default on ws://127.0.0.1:8787/ for the viewer's Live
         //   section. Binding anything but loopback lets other people watch.
+        //
+        // --livesplit split|log
+        //   Log-only when omitted. The desktop UI has no Off state; the checkbox switches
+        //   between Log only and Send splits.
         bool exitWithGame = false;
         int? gamePid = null;
         int graceSeconds = 25;
         bool liveEnabled = true;
         int livePort = 8787;
         string liveBind = "127.0.0.1";
-        string liveSplitMode = "off";
+        string liveSplitMode = "log";
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])

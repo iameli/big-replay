@@ -131,18 +131,13 @@ rate. It deliberately does not wait for the viewer's 80% teleport consensus, whi
 add the slowest client's latency to the run; the room is far from every route. It does
 not require the congratulations popup, so it also works when the popup is missed.
 
-Big Replay reads the splits file and layout for a configured autosplitter and shows a
-warning naming it; it also warns if LiveSplit advances more than one segment without
-Big Replay sending the split. Remove the old autosplitter rather than ignoring the
-warning — it will double-split.
+If the splits file still configures the old BigWalk autosplitter, leave it deactivated
+(don't press **Activate** in the Auto Splitting section). Big Replay warns if LiveSplit
+advances more than one segment without it sending the split, which catches an old
+autosplitter that is actually running.
 
-**Disable any old Big Walk autosplitter first**, including one embedded in the
-LiveSplit layout (Layout → Edit Layout → Layout Settings → Auto Splitting, or the
-split's **Auto Splitting** section). Two producers advancing the same timer will
-double-split or split into the wrong segment.
-
-For source launches, `--livesplit log` and `--livesplit split` set the initial mode;
-otherwise it starts off.
+For source launches, `--livesplit log` (the default) and `--livesplit split` set the
+initial checkbox state.
 
 ### Run or package from source
 

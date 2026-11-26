@@ -49,10 +49,8 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
     private string _status = "LiveSplit autosplit is off.";
     private string _lastAction = "No splits yet.";
     private string? _splitTimeWarning;
-    private string? _configAutoSplitterWarning;
     private string? _unexpectedSplitWarning;
     private int _unexpectedSplitWarningAttempt = -1;
-    private long _lastConfigCheck;
     private EndgameTeleport? _pendingEndgame;
     private bool _endgameSplitSent;
     private bool _endgameWaitLogged;
@@ -105,6 +103,9 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
     {
         get { lock (_statusGate) return _status; }
     }
+
+    /// <summary>True once the LiveSplit named pipe is open.</summary>
+    public bool IsConnected => _pipe?.IsConnected == true;
 
     /// <summary>Send the final split when the endgame-room teleport is detected.</summary>
     public bool FinishOnEndgameTeleport
@@ -228,11 +229,6 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
         }
 
         _route = LiveSplitRoute.TryLoad();
-        _configAutoSplitterWarning = _route?.AutoSplitter;
-        if (_configAutoSplitterWarning is not null)
-        {
-            Log($"warning: LiveSplit has an autosplitter configured: {_configAutoSplitterWarning}");
-        }
         _lastPoll = 0;
         if (_route is not null)
         {
@@ -277,11 +273,6 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
             _sessionBaselined = true;
         }
 
-        if (now - _lastConfigCheck >= 5000)
-        {
-            _lastConfigCheck = now;
-            RefreshAutoSplitterWarning();
-        }
 
         UpdateStatus();
     }
@@ -759,67 +750,37 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
         }
         _pending.Clear();
     }
-    /// <summary>Re-read LiveSplit's split/layout files for a configured autosplitter. LiveSplit
-    /// 1.8.37 has no pipe command that reports one, so the files are the only early warning.</summary>
-    private void RefreshAutoSplitterWarning()
-    {
-        string? detected = LiveSplitRoute.FindAutoSplitter();
-        if (string.Equals(detected, _configAutoSplitterWarning, StringComparison.Ordinal))
-        {
-            return;
-        }
-        _configAutoSplitterWarning = detected;
-        if (detected is not null)
-        {
-            Log($"warning: LiveSplit has an autosplitter configured: {detected}");
-        }
-        else
-        {
-            Log("LiveSplit autosplitter warning cleared");
-        }
-    }
 
 
     private void UpdateStatus()
     {
         if (Mode == LiveSplitMode.Off)
         {
-            SetStatus("LiveSplit autosplit is off.");
+            SetStatus("LiveSplit is off.");
             return;
         }
         if (_pipe is null)
         {
-            SetStatus("LiveSplit: waiting for LiveSplit…");
+            SetStatus("LiveSplit: waiting for LiveSplit");
             return;
         }
-        var parts = new List<string> { $"LiveSplit: {_phase.ToLowerInvariant()}" };
-        if (_segment is not ("-" or ""))
-        {
-            parts.Add($"segment {_splitIndex} \"{_segment}\"");
-        }
+        string mode = Mode == LiveSplitMode.LogOnly ? "Log only" : "Send splits";
+        string state;
         if (!_towers.HasData)
         {
-            parts.Add("waiting for gourd data");
+            state = "waiting for gourd data";
         }
         else if (_armed)
         {
-            parts.Add($"armed · attempt {_attempt} · {_latched.Count} tower(s) handled");
+            state = $"armed · attempt {_attempt}";
         }
         else
         {
-            parts.Add("not armed");
+            state = "not armed";
         }
-        parts.Add(_finishOnEndgameTeleport ? "finish: auto on teleport" : "finish: manual");
-        if (_gameName is not null && !_gameName.Contains("Big Walk", StringComparison.OrdinalIgnoreCase))
-        {
-            parts.Add($"game \"{_gameName}\"");
-        }
-        string status = string.Join(" · ", parts) + $"\nLast: {_lastAction}";
-        if (_configAutoSplitterWarning is not null)
-        {
-            status = $"Warning: {_configAutoSplitterWarning}. Remove/disable it — two producers " +
-                $"will double-split.\n{status}";
-        }
+        string segment = _segment is "-" or "" ? "" : $" · segment {_splitIndex} \"{_segment}\"";
+        string finish = _finishOnEndgameTeleport ? " · finish auto" : "";
+        string status = $"{mode} · {state}{segment}{finish}";
         if (_unexpectedSplitWarning is not null)
         {
             status = $"Warning: {_unexpectedSplitWarning}. Check for an old autosplitter or " +

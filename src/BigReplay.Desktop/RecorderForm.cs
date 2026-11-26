@@ -1,84 +1,95 @@
 using System.ComponentModel;
-using Replay.Format;
 using System.Diagnostics;
 using BigReplay.Live;
 using BigReplay.Recorder;
 using GameAccess;
+using Replay.Format;
 
 namespace BigReplay.Desktop;
 
 internal sealed class RecorderForm : Form
 {
-    private readonly Label _status = new() { AutoSize = true, Text = "Waiting for Big Walk" };
-    private readonly Label _detail = new() { AutoSize = true, Text = "Launch the game whenever you're ready." };
-    private readonly Label _file = new() { AutoSize = true, Text = "No recording in progress." };
-    private readonly Label _lastSaved = new() { AutoSize = true, Text = "No replays saved this time yet." };
-    private readonly Button _pause = new() { AutoSize = true, Text = "Pause recording", Padding = new Padding(12, 6, 12, 6) };
-    private readonly Button _openFolder = new() { AutoSize = true, Text = "Open recordings folder", Padding = new Padding(12, 6, 12, 6) };
+    private static readonly Color WaitingColor = Color.FromArgb(100, 106, 116);
+    private static readonly Color ConnectedColor = Color.FromArgb(28, 101, 187);
+    private static readonly Color RecordingColor = Color.FromArgb(190, 45, 45);
+    private static readonly Color LiveSplitConnectedColor = Color.FromArgb(21, 116, 70);
+
+    private readonly Spinner _spinner = new() { Margin = new Padding(0, 6, 10, 0) };
+    private readonly Label _status = new()
+    {
+        AutoSize = false, Text = "Waiting for Game", TextAlign = ContentAlignment.MiddleLeft,
+    };
+    private readonly Label _saveLine = new()
+    {
+        AutoSize = true, Text = "No replay saved yet.", AutoEllipsis = true,
+    };
+    private readonly CheckBox _sendSplits = new()
+    {
+        Text = "Send splits to LiveSplit", AutoSize = true, Margin = new Padding(0, 0, 0, 4),
+    };
+    private readonly Label _liveSplitState = new()
+    {
+        AutoSize = true, Visible = false, Margin = new Padding(10, 1, 0, 0),
+        ForeColor = ConnectedColor,
+    };
+    private readonly Button _towerMenu = new()
+    {
+        AutoSize = true, Text = "Tower splits ▾", Padding = new Padding(10, 4, 10, 4),
+        Margin = new Padding(0, 0, 0, 6),
+    };
+    private readonly ContextMenuStrip _towerMenuItems = new();
+    private readonly Button _pause = new()
+    {
+        AutoSize = true, Text = "Pause recording", Padding = new Padding(12, 6, 12, 6),
+    };
+    private readonly Button _openFolder = new()
+    {
+        AutoSize = true, Text = "Open recordings folder", Padding = new Padding(12, 6, 12, 6),
+    };
+    private readonly Button _copyLive = new()
+    {
+        AutoSize = true, Text = "Copy live link", Padding = new Padding(12, 6, 12, 6), Visible = false,
+    };
+    private readonly Label _liveLabel = new()
+    {
+        AutoSize = true, ForeColor = WaitingColor, Margin = new Padding(0, 10, 0, 0),
+    };
     private readonly TextBox _folder = new() { ReadOnly = true, Dock = DockStyle.Fill, TabStop = true };
     private readonly Icon _appIcon = new(typeof(RecorderForm), "AppIcon.ico");
-    private readonly Bitmap _logoBitmap;
-    private CancellationTokenSource? _stop;
-    private Task _runTask = Task.CompletedTask;
-    private string? _outputDirectory;
-    private bool _closing;
-    private bool _allowClose;
     private readonly bool _exitWithGame;
-    private int? _gamePid;
     private readonly int _graceSeconds;
     private readonly CancellationTokenSource _lifetime = new();
-
-    private readonly Label _liveLabel = new() { AutoSize = true, ForeColor = Color.FromArgb(85, 92, 104) };
-    private readonly Button _copyLive = new() { AutoSize = true, Text = "Copy live viewer link", Padding = new Padding(12, 6, 12, 6), Visible = false };
-    private readonly System.Windows.Forms.Timer _liveTimer = new() { Interval = 1000 };
     private readonly bool _liveEnabled;
-    private LiveSession? _liveSession;
-    private LiveWebSocketServer? _liveServer;
     private readonly string? _liveError;
-    private DateTime _copyNoticeUntil = DateTime.MinValue;
     private readonly TowerProgressTracker _towerTracker = new();
     private readonly EndgameTeleportTracker _endgameTracker = new();
     private readonly LiveSplitAutosplit _liveSplit;
-    private readonly ComboBox _liveSplitMode = new()
-    {
-        DropDownStyle = ComboBoxStyle.DropDownList, Width = 150, Margin = new Padding(0, 0, 16, 0),
-    };
-    private readonly FlowLayoutPanel _towerToggles = new()
-    {
-        AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 8),
-    };
-    private readonly Label _liveSplitLabel = new()
-    {
-        AutoSize = true, ForeColor = Color.FromArgb(85, 92, 104), Margin = new Padding(0, 0, 0, 16),
-    };
+    private readonly System.Windows.Forms.Timer _liveTimer = new() { Interval = 1000 };
     private readonly System.Windows.Forms.Timer _liveSplitTimer = new() { Interval = 500 };
+    private CancellationTokenSource? _stop;
+    private Task _runTask = Task.CompletedTask;
+    private string? _outputDirectory;
+    private string? _currentFileName;
+    private string _lastSavedLine = "No replay saved yet.";
+    private int? _gamePid;
+    private bool _closing;
+    private bool _allowClose;
+    private LiveSession? _liveSession;
+    private LiveWebSocketServer? _liveServer;
+    private DateTime _copyNoticeUntil = DateTime.MinValue;
 
     public RecorderForm(bool exitWithGame = false, int? gamePid = null, int graceSeconds = 25,
         bool liveEnabled = true, int livePort = 8787, string liveBind = "127.0.0.1",
-        string liveSplitMode = "off")
+        string liveSplitMode = "log")
     {
+        bool sendSplits = liveSplitMode.ToLowerInvariant() is "split" or "send" or "send-splits";
         _liveSplit = new LiveSplitAutosplit(_towerTracker);
-        _liveSplitMode.Items.AddRange(["Off", "Log only", "Send splits"]);
-        _liveSplitMode.SelectedIndex = liveSplitMode.ToLowerInvariant() switch
+        _sendSplits.Checked = sendSplits;
+        _liveSplit.Mode = sendSplits ? LiveSplitMode.Split : LiveSplitMode.LogOnly;
+        _sendSplits.CheckedChanged += (_, _) =>
         {
-            "log" or "log-only" or "logonly" => 1,
-            "split" or "send" or "send-splits" => 2,
-            _ => 0,
-        };
-        _liveSplit.Mode = _liveSplitMode.SelectedIndex switch
-        {
-            1 => LiveSplitMode.LogOnly,
-            2 => LiveSplitMode.Split,
-            _ => LiveSplitMode.Off,
-        };
-        _liveSplitMode.SelectedIndexChanged += (_, _) =>
-        {
-            _liveSplit.Mode = _liveSplitMode.SelectedIndex switch
-            {
-                1 => LiveSplitMode.LogOnly,
-                2 => LiveSplitMode.Split,
-                _ => LiveSplitMode.Off,
-            };
+            _liveSplit.Mode = _sendSplits.Checked ? LiveSplitMode.Split : LiveSplitMode.LogOnly;
+            UpdateLiveSplitIndicator();
         };
         _exitWithGame = exitWithGame;
         _gamePid = gamePid;
@@ -101,10 +112,6 @@ internal sealed class RecorderForm : Form
         _liveTimer.Tick += (_, _) => UpdateLiveStatus();
         Text = "Big Replay";
         Icon = _appIcon;
-        using (var logoIcon = new Icon(_appIcon, 128, 128))
-        {
-            _logoBitmap = logoIcon.ToBitmap();
-        }
         Disposed += (_, _) =>
         {
             _liveTimer.Stop();
@@ -113,55 +120,70 @@ internal sealed class RecorderForm : Form
             _liveSplitTimer.Dispose();
             _lifetime.Cancel();
             _lifetime.Dispose();
-            _logoBitmap.Dispose();
+            _towerMenuItems.Dispose();
             _appIcon.Dispose();
         };
         StartPosition = FormStartPosition.CenterScreen;
-        AutoScaleDimensions = new SizeF(96, 96);
-        AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(700, 560);
-        MinimumSize = new Size(600, 500);
+        AutoScaleMode = AutoScaleMode.None;
+        ClientSize = new Size(760, 540);
+        MinimumSize = new Size(760, 540);
         BackColor = Color.FromArgb(247, 248, 250);
         Font = new Font("Segoe UI", 10);
 
-        var layout = new TableLayoutPanel
+        _status.Font = new Font(Font.FontFamily, 18, FontStyle.Bold);
+        _status.ForeColor = WaitingColor;
+        _saveLine.ForeColor = WaitingColor;
+        _liveLabel.Font = new Font(Font.FontFamily, 9);
+        _spinner.SpinnerColor = WaitingColor;
+        _spinner.Active = true;
+
+        var root = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(28), ColumnCount = 1, RowCount = 16,
+            Dock = DockStyle.Fill, Padding = new Padding(28, 24, 28, 24),
+            ColumnCount = 1, RowCount = 2,
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var brand = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = Padding.Empty };
-        brand.Controls.Add(new PictureBox
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var content = new TableLayoutPanel
         {
-            Image = _logoBitmap, Size = new Size(64, 64), SizeMode = PictureBoxSizeMode.Zoom,
-            Margin = new Padding(0, 0, 12, 0), TabStop = false,
-        });
-        brand.Controls.Add(new Label
-        {
-            Text = "Big Replay", AutoSize = true, Font = new Font(Font.FontFamily, 24, FontStyle.Bold),
-            Margin = new Padding(0, 8, 0, 0),
-        });
-        var subtitle = new Label { Text = "Automatic Big Walk replay recorder", AutoSize = true, Margin = new Padding(0, 0, 0, 24) };
-        _status.Font = new Font(Font.FontFamily, 16, FontStyle.Bold);
-        _detail.Margin = new Padding(0, 8, 0, 16);
-        _file.Margin = new Padding(0, 0, 0, 8);
-        _lastSaved.Margin = new Padding(0, 0, 0, 20);
-        _liveLabel.Margin = new Padding(0, 0, 0, 16);
-        var liveSplitTitle = new Label
-        {
-            Text = "LiveSplit autosplit", AutoSize = true,
-            Font = new Font(Font.FontFamily, 12, FontStyle.Bold), Margin = new Padding(0, 0, 0, 6),
+            Dock = DockStyle.Fill, AutoScroll = false, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty,
         };
-        var liveSplitModeRow = new FlowLayoutPanel
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (int i = 0; i < content.RowCount; i++)
         {
-            AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 4),
-        };
-        liveSplitModeRow.Controls.Add(new Label { Text = "Mode", AutoSize = true, Margin = new Padding(0, 5, 8, 0) });
-        liveSplitModeRow.Controls.Add(_liveSplitMode);
-        var towerRow = new FlowLayoutPanel
+            content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        }
+
+
+        var statusRow = new TableLayoutPanel
         {
-            AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6),
+            AutoSize = false, Height = 100, Dock = DockStyle.Fill,
+            ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 0, 0, 6),
         };
-        towerRow.Controls.Add(new Label { Text = "Split on", AutoSize = true, Margin = new Padding(0, 5, 8, 0) });
+        statusRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        statusRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        statusRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _spinner.Anchor = AnchorStyles.Left;
+        _spinner.Margin = new Padding(0, 0, 12, 0);
+        _status.Dock = DockStyle.Fill;
+        statusRow.Controls.Add(_spinner, 0, 0);
+        statusRow.Controls.Add(_status, 1, 0);
+
+        _saveLine.Margin = new Padding(0, 0, 0, 20);
+        _sendSplits.Margin = new Padding(0, 0, 0, 4);
+
+        var liveSplitRow = new FlowLayoutPanel
+        {
+            AutoSize = true, WrapContents = false, Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 10),
+        };
+        _liveSplitState.Font = new Font(Font.FontFamily, 10);
+        liveSplitRow.Controls.Add(_sendSplits);
+        liveSplitRow.Controls.Add(_liveSplitState);
+
+        _towerMenuItems.Items.Add(new ToolStripMenuItem("Split on") { Enabled = false });
         foreach (var group in GourdReceptacles.Groups)
         {
             string tower = group.Name;
@@ -171,58 +193,63 @@ internal sealed class RecorderForm : Form
                 "Storage" => "Storage/Overflow",
                 _ => tower,
             };
-            var check = new CheckBox
-            {
-                Text = label, AutoSize = true, Checked = true, Margin = new Padding(0, 0, 12, 0),
-            };
-            check.CheckedChanged += (_, _) => _liveSplit.SetTowerEnabled(tower, check.Checked);
-            towerRow.Controls.Add(check);
+            var item = new ToolStripMenuItem(label) { CheckOnClick = true, Checked = true };
+            item.CheckedChanged += (_, _) => _liveSplit.SetTowerEnabled(tower, item.Checked);
+            _towerMenuItems.Items.Add(item);
         }
-        var finishRow = new FlowLayoutPanel
+        _towerMenuItems.Items.Add(new ToolStripSeparator());
+        var finishItem = new ToolStripMenuItem("Finish on endgame teleport")
         {
-            AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6),
+            CheckOnClick = true, Checked = true,
         };
-        var finishCheck = new CheckBox
+        finishItem.CheckedChanged += (_, _) => _liveSplit.FinishOnEndgameTeleport = finishItem.Checked;
+        _towerMenuItems.Items.Add(finishItem);
+        _towerMenu.Click += (_, _) =>
+            _towerMenuItems.Show(_towerMenu, new Point(0, _towerMenu.Height));
+        Resize += (_, _) => _towerMenuItems.Close();
+
+        content.Controls.Add(statusRow);
+        content.Controls.Add(_saveLine);
+        content.Controls.Add(liveSplitRow);
+        content.Controls.Add(_towerMenu);
+
+        var folderTitle = new Label
         {
-            Text = "Finish on endgame teleport", AutoSize = true, Checked = true,
-            Margin = new Padding(0, 0, 12, 0),
+            Text = "Save replays to", AutoSize = true, Font = new Font(Font.FontFamily, 10, FontStyle.Bold),
+            Margin = new Padding(0, 0, 0, 4),
         };
-        finishCheck.CheckedChanged += (_, _) => _liveSplit.FinishOnEndgameTeleport = finishCheck.Checked;
-        finishRow.Controls.Add(finishCheck);
-        var folderTitle = new Label { Text = "Save replays to", AutoSize = true };
-        var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 12, 0, 12) };
+        _folder.Margin = Padding.Empty;
+        var buttons = new FlowLayoutPanel
+        {
+            AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 12, 0, 0),
+        };
         buttons.Controls.Add(_pause);
         buttons.Controls.Add(_openFolder);
         _copyLive.Visible = _liveServer is not null;
         buttons.Controls.Add(_copyLive);
-        var hint = new Label
+
+        var footer = new TableLayoutPanel
         {
-            Text = "Run it on any player's PC in the lobby — every client has the full player and gourd state.\n" +
-                "Closing this window finishes and saves the current replay.\n" +
-                "Live viewers open the address above in any browser on this PC — the viewer is built in,\n" +
-                "and it jumps to the live point, with scrubbing to review what already happened.",
-            AutoSize = true, ForeColor = Color.FromArgb(85, 92, 104),
+            Dock = DockStyle.None, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
+            AutoSize = false, Height = 190, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty,
         };
-        layout.Controls.Add(brand);
-        layout.Controls.Add(subtitle);
-        layout.Controls.Add(_status);
-        layout.Controls.Add(_detail);
-        layout.Controls.Add(_file);
-        layout.Controls.Add(_lastSaved);
-        layout.Controls.Add(liveSplitTitle);
-        layout.Controls.Add(liveSplitModeRow);
-        layout.Controls.Add(towerRow);
-        layout.Controls.Add(finishRow);
-        layout.Controls.Add(_liveSplitLabel);
-        layout.Controls.Add(folderTitle);
-        layout.Controls.Add(_folder);
-        layout.Controls.Add(buttons);
-        layout.Controls.Add(hint);
-        Controls.Add(layout);
-        layout.SizeChanged += (_, _) =>
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (int i = 0; i < footer.RowCount; i++)
         {
-            int width = Math.Max(100, layout.ClientSize.Width - layout.Padding.Horizontal - 6);
-            foreach (var label in new[] { _status, _detail, _file, _lastSaved, _liveLabel, _liveSplitLabel, hint })
+            footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        }
+        footer.Controls.Add(folderTitle);
+        footer.Controls.Add(_folder);
+        footer.Controls.Add(buttons);
+        footer.Controls.Add(_liveLabel);
+
+        root.Controls.Add(content, 0, 0);
+        root.Controls.Add(footer, 0, 1);
+        Controls.Add(root);
+        content.SizeChanged += (_, _) =>
+        {
+            int width = Math.Max(160, content.ClientSize.Width - 8);
+            foreach (var label in new[] { _status, _saveLine, _liveLabel })
             {
                 label.MaximumSize = new Size(width, 0);
             }
@@ -237,7 +264,7 @@ internal sealed class RecorderForm : Form
             else
             {
                 _pause.Enabled = false;
-                SetStatus("Finishing recording", "Please wait while the replay is saved.");
+                SetStatus("Finishing recording", WaitingColor, spinning: true);
                 _stop!.Cancel();
                 await _runTask;
                 if (!_closing)
@@ -252,9 +279,10 @@ internal sealed class RecorderForm : Form
             StartMonitoring();
             UpdateLiveStatus();
             _liveTimer.Start();
-            _liveSplitTimer.Tick += (_, _) => _liveSplitLabel.Text = _liveSplit.Status;
+            _liveSplitTimer.Tick += (_, _) => UpdateLiveSplitIndicator();
             _liveSplitTimer.Start();
             _liveSplit.Start();
+            UpdateLiveSplitIndicator();
             if (_exitWithGame)
             {
                 _ = ExitWatcherAsync(_lifetime.Token);
@@ -262,13 +290,12 @@ internal sealed class RecorderForm : Form
         };
     }
 
-    /// <summary>Live status line: where to connect, what the stream holds, who is watching.</summary>
     private void UpdateLiveStatus()
     {
         if (_copyNoticeUntil != default && DateTime.UtcNow >= _copyNoticeUntil)
         {
             _copyNoticeUntil = default;
-            _copyLive.Text = "Copy live viewer link";
+            _copyLive.Text = "Copy live link";
         }
         if (_liveServer is null || _liveSession is null)
         {
@@ -284,8 +311,20 @@ internal sealed class RecorderForm : Form
             : "waiting for a walk";
         int viewers = _liveServer.ClientCount;
         _liveLabel.Text =
-            $"Live viewers watch at {LiveViewerLink.For(_liveServer.Url)} · {state} · " +
-            $"{(viewers == 1 ? "1 viewer" : $"{viewers} viewers")}";
+            $"Live: {state} · {(viewers == 1 ? "1 viewer" : $"{viewers} viewers")}";
+    }
+
+    private void UpdateLiveSplitIndicator()
+    {
+        if (!_sendSplits.Checked)
+        {
+            _liveSplitState.Visible = false;
+            return;
+        }
+        _liveSplitState.Visible = true;
+        bool connected = _liveSplit.IsConnected;
+        _liveSplitState.Text = connected ? "Connected" : "Checking for LiveSplit";
+        _liveSplitState.ForeColor = connected ? LiveSplitConnectedColor : ConnectedColor;
     }
 
     private void CopyLiveLink()
@@ -314,15 +353,9 @@ internal sealed class RecorderForm : Form
         _runTask = MonitorAsync(_stop.Token);
     }
 
-    /// <summary>
-    /// --exit-with-game: save and quit once the game is gone. Watches a specific pid when the
-    /// launcher supplied one (covers crashes, where no clean shutdown callback ever fires);
-    /// otherwise watches every "Big Walk" process by name. A relaunch within the grace period
-    /// cancels the shutdown.
-    /// </summary>
     private async Task ExitWatcherAsync(CancellationToken token)
     {
-        bool seen = false; // becomes true only once the game has actually been observed alive
+        bool seen = false;
         try
         {
             while (!token.IsCancellationRequested)
@@ -334,8 +367,6 @@ internal sealed class RecorderForm : Form
                 }
                 else if (!seen && _gamePid is not null)
                 {
-                    // The supplied pid was never alive for us (stale handoff): watch by process
-                    // name instead of treating it as "the game just exited".
                     _gamePid = null;
                     seen = AnyBigWalkRunning();
                 }
@@ -346,7 +377,7 @@ internal sealed class RecorderForm : Form
                         RequestClose();
                         return;
                     }
-                    continue; // grace was interrupted by a relaunch
+                    continue;
                 }
 
                 await Task.Delay(2000, token);
@@ -354,7 +385,6 @@ internal sealed class RecorderForm : Form
         }
         catch (OperationCanceledException)
         {
-            // form is closing; nothing to do
         }
     }
 
@@ -365,7 +395,7 @@ internal sealed class RecorderForm : Form
             await Task.Delay(1000, token);
             if (IsGameAlive())
             {
-                return false; // relaunched during the grace period
+                return false;
             }
         }
         return true;
@@ -382,7 +412,7 @@ internal sealed class RecorderForm : Form
             }
             catch (ArgumentException)
             {
-                return false; // no such process: it exited (or crashed)
+                return false;
             }
         }
         return AnyBigWalkRunning();
@@ -416,7 +446,6 @@ internal sealed class RecorderForm : Form
         }
         catch (InvalidOperationException)
         {
-            // window handle not created / already gone
         }
     }
 
@@ -433,34 +462,44 @@ internal sealed class RecorderForm : Form
             _folder.Text = _outputDirectory;
             Directory.CreateDirectory(_outputDirectory);
             string manifest = Path.Combine(AppContext.BaseDirectory, "manifest.json");
-            // Fail visibly for a missing/corrupt bundled manifest, even before the game starts.
             ManifestLoader.Load(manifest);
             var progress = new Progress<RecordingStatus>(sample =>
             {
-                if (token.IsCancellationRequested) return;
-                SetStatus(sample.Frames == 0 ? "Waiting for players" : "Recording",
-                    sample.Frames == 0
-                        ? "Big Walk is connected. Enter a walk to begin capturing players."
-                        : $"{TimeSpan.FromSeconds(sample.ElapsedSeconds):hh\\:mm\\:ss} recorded  ·  {sample.Players} players  ·  {sample.Frames:N0} frames",
-                    sample.Frames > 0);
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+                if (sample.Frames == 0)
+                {
+                    SetStatus("Waiting for Walk", ConnectedColor, spinning: true);
+                }
+                else
+                {
+                    SetStatus("Recording", RecordingColor, spinning: true);
+                    if (_currentFileName is not null)
+                    {
+                        _saveLine.Text = $"Current: {_currentFileName}";
+                    }
+                }
             });
             while (!token.IsCancellationRequested)
             {
-                SetStatus("Waiting for Big Walk", "Launch the game whenever you're ready. Checking every 2 seconds.");
+                SetStatus("Waiting for Game", WaitingColor, spinning: true);
                 GameProcess? game = null;
                 var processes = Process.GetProcessesByName(GameProcess.ProcessName);
                 bool running = processes.Length > 0;
                 foreach (var process in processes) process.Dispose();
                 if (running)
                 {
-                    SetStatus("Connecting to Big Walk", "Preparing read-only capture…");
                     try
                     {
                         game = await Task.Run(() => GameProcess.Attach(), token);
+                        SetStatus("Waiting for Walk", ConnectedColor, spinning: true);
                     }
                     catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
                     {
-                        SetStatus("Waiting for game access", $"{ex.Message} Retrying in 2 seconds.");
+                        SetStatus("Waiting for Game", WaitingColor, spinning: true);
+                        _saveLine.Text = ex.Message;
                     }
                 }
                 if (game is not null)
@@ -469,7 +508,8 @@ internal sealed class RecorderForm : Form
                     {
                         string path = Path.Combine(_outputDirectory,
                             $"bigreplay-{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid().ToString("N")[..8]}.replay.json.gz");
-                        _file.Text = $"Current: {Path.GetFileName(path)}";
+                        _currentFileName = Path.GetFileName(path);
+                        _saveLine.Text = $"Current: {_currentFileName}";
                         try
                         {
                             var result = await Task.Run(() =>
@@ -482,17 +522,21 @@ internal sealed class RecorderForm : Form
                             }, token);
                             if (result.Path is not null)
                             {
-                                _lastSaved.Text = $"Saved: {Path.GetFileName(result.Path)}";
+                                _lastSavedLine = $"Last saved: {Path.GetFileName(result.Path)}";
                             }
+                            _saveLine.Text = _lastSavedLine;
                         }
                         catch
                         {
-                            _file.Text = File.Exists(path + ".partial")
-                                ? $"Unfinished capture kept: {Path.GetFileName(path)}.partial"
-                                : "No recording in progress.";
+                            _saveLine.Text = File.Exists(path + ".partial")
+                                ? $"Unfinished capture: {Path.GetFileName(path)}.partial"
+                                : _lastSavedLine;
                             throw;
                         }
-                        _file.Text = "No recording in progress.";
+                        finally
+                        {
+                            _currentFileName = null;
+                        }
                     }
                 }
                 await Task.Delay(2000, token);
@@ -501,7 +545,8 @@ internal sealed class RecorderForm : Form
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            SetStatus("Recording stopped", $"{ex.Message} Fix the problem, then click Resume recording.");
+            SetStatus("Recording stopped", RecordingColor, spinning: false);
+            _saveLine.Text = ex.Message;
             if (_closing)
             {
                 MessageBox.Show(this, ex.Message + "\nAny unfinished capture is kept with a .partial extension.",
@@ -513,14 +558,15 @@ internal sealed class RecorderForm : Form
         {
             _pause.Text = "Resume recording";
         }
-        SetStatus("Paused", "Click Resume recording to watch for Big Walk again.");
+        SetStatus("Paused", WaitingColor, spinning: false);
     }
 
-    private void SetStatus(string title, string detail, bool recording = false)
+    private void SetStatus(string title, Color color, bool spinning)
     {
         _status.Text = title;
-        _status.ForeColor = recording ? Color.FromArgb(21, 116, 70) : Color.FromArgb(35, 45, 65);
-        _detail.Text = detail;
+        _status.ForeColor = color;
+        _spinner.SpinnerColor = color;
+        _spinner.Active = spinning;
     }
 
     private void OpenFolder()
@@ -546,7 +592,7 @@ internal sealed class RecorderForm : Form
             if (_closing) return;
             _closing = true;
             _pause.Enabled = false;
-            SetStatus("Finishing recording", "Please wait while the replay is saved.");
+            SetStatus("Finishing recording", WaitingColor, spinning: true);
             _stop?.Cancel();
             await _runTask;
             _stop?.Dispose();
@@ -554,12 +600,12 @@ internal sealed class RecorderForm : Form
             await _liveSplit.DisposeAsync();
             if (_liveServer is not null)
             {
-                // Clean close for viewers: they see the socket go away rather than a timeout.
                 _liveTimer.Stop();
                 _liveServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 _liveServer = null;
                 _liveSession = null;
             }
+            _spinner.Active = false;
             _allowClose = true;
             Close();
             return;
