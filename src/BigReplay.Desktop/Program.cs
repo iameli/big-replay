@@ -15,15 +15,15 @@ internal static class Program
         //   section. Binding anything but loopback lets other people watch.
         //
         // --livesplit split|log
-        //   Log-only when omitted. The desktop UI has no Off state; the checkbox switches
-        //   between Log only and Send splits.
+        //   Overrides the checkbox for this launch. When omitted, the desktop app uses the
+        //   saved setting (log-only by default).
         bool exitWithGame = false;
         int? gamePid = null;
         int graceSeconds = 25;
         bool liveEnabled = true;
         int livePort = 8787;
         string liveBind = "127.0.0.1";
-        string liveSplitMode = "log";
+        string? liveSplitMode = null;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])

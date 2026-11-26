@@ -67,10 +67,11 @@ The portable ZIP does not register Windows startup automatically.
   watch the run live as it happens (see
   [Live replay](#live-replay)). `--no-live`, `--live-port` and `--live-bind` change
   this.
-- **LiveSplit autosplit** is opt-in (default **Off**). Choose **Log only** or
-  **Send splits** in the window. Big Replay never starts, resets, pauses, or resumes
-  the timer; it only sends `split` when LiveSplit's current segment names the tower
-  that just became full. See [LiveSplit autosplit](#livesplit-autosplit).
+- **LiveSplit autosplit** is one checkbox: unchecked = **Log only**, checked =
+  **Send splits**. It starts unchecked (log-only) and remembers the choice. Big Replay
+  never starts, resets, pauses, or resumes the timer; it only sends `split` when
+  LiveSplit's current segment names the tower that just became full.
+  See [LiveSplit autosplit](#livesplit-autosplit).
 - If the game exits, the replay is finished and the app watches for the next launch.
 - When a recorded walk drops to **zero players**, its replay is finished automatically.
   The app waits for players again and records the next walk in a new file, even if
@@ -92,10 +93,11 @@ replay. Waiting in menus before any players appear does not create empty replays
 
 ### LiveSplit autosplit
 
-LiveSplit support is off by default. Set **Mode** to **Log only** to write what the
-detector would do to `Documents/BigReplay/livesplit.log`, or **Send splits** to let it
-advance the timer. The window shows `waiting for LiveSplit`, `waiting for gourd data`,
-`armed`, the current LiveSplit segment, and the last action.
+LiveSplit is always watching. The **Send splits to LiveSplit** checkbox is unchecked by
+default: log-only mode writes what the detector would do to
+`Documents/BigReplay/livesplit.log`. Check it to let it advance the timer; the choice is
+remembered in `%LOCALAPPDATA%\BigReplay\settings.json`. The checkbox shows a green
+**Connected** or blue **Checking for LiveSplit** indicator when checked.
 
 Big Replay connects to LiveSplit's `\\.\pipe\LiveSplit` on the same Windows machine.
 LiveSplit starts that named pipe automatically on launch; the **Server** setting only
@@ -136,8 +138,8 @@ If the splits file still configures the old BigWalk autosplitter, leave it deact
 advances more than one segment without it sending the split, which catches an old
 autosplitter that is actually running.
 
-For source launches, `--livesplit log` (the default) and `--livesplit split` set the
-initial checkbox state.
+For source launches, `--livesplit log` and `--livesplit split` override the saved
+checkbox for that launch. Without the flag, the saved setting is used.
 
 ### Run or package from source
 

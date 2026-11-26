@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.ComponentModel;
 using System.Diagnostics;
 using BigReplay.Live;
@@ -80,15 +81,23 @@ internal sealed class RecorderForm : Form
 
     public RecorderForm(bool exitWithGame = false, int? gamePid = null, int graceSeconds = 25,
         bool liveEnabled = true, int livePort = 8787, string liveBind = "127.0.0.1",
-        string liveSplitMode = "log")
+        string? liveSplitMode = null)
     {
-        bool sendSplits = liveSplitMode.ToLowerInvariant() is "split" or "send" or "send-splits";
+        string? requestedMode = liveSplitMode?.Trim().ToLowerInvariant();
+        bool? requestedSend = requestedMode switch
+        {
+            "split" or "send" or "send-splits" => true,
+            "log" or "log-only" or "logonly" or "off" => false,
+            _ => null,
+        };
+        bool sendSplits = requestedSend ?? LoadSendSplits();
         _liveSplit = new LiveSplitAutosplit(_towerTracker);
         _sendSplits.Checked = sendSplits;
         _liveSplit.Mode = sendSplits ? LiveSplitMode.Split : LiveSplitMode.LogOnly;
         _sendSplits.CheckedChanged += (_, _) =>
         {
             _liveSplit.Mode = _sendSplits.Checked ? LiveSplitMode.Split : LiveSplitMode.LogOnly;
+            SaveSendSplits(_sendSplits.Checked);
             UpdateLiveSplitIndicator();
         };
         _exitWithGame = exitWithGame;
@@ -325,6 +334,56 @@ internal sealed class RecorderForm : Form
         bool connected = _liveSplit.IsConnected;
         _liveSplitState.Text = connected ? "Connected" : "Checking for LiveSplit";
         _liveSplitState.ForeColor = connected ? LiveSplitConnectedColor : ConnectedColor;
+    }
+
+    private static string SettingsPath()
+    {
+        string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            root = AppContext.BaseDirectory;
+        }
+        return Path.Combine(root, "BigReplay", "settings.json");
+    }
+
+    private static bool LoadSendSplits()
+    {
+        try
+        {
+            string path = SettingsPath();
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+            return JsonSerializer.Deserialize<DesktopSettings>(File.ReadAllText(path))?.SendSplits == true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static void SaveSendSplits(bool sendSplits)
+    {
+        try
+        {
+            string path = SettingsPath();
+            string? directory = Path.GetDirectoryName(path);
+            if (directory is not null)
+            {
+                Directory.CreateDirectory(directory);
+            }
+            File.WriteAllText(path, JsonSerializer.Serialize(new DesktopSettings { SendSplits = sendSplits }));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // A settings write must never affect recording.
+        }
+    }
+
+    private sealed class DesktopSettings
+    {
+        public bool SendSplits { get; set; }
     }
 
     private void CopyLiveLink()
