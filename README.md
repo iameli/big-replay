@@ -102,9 +102,9 @@ LiveSplit starts that named pipe automatically on launch; the **Server** setting
 enables TCP/WebSocket, so no plugin, port, or server toggle is needed. Run **one**
 LiveSplit instance — two windows create two independent timers and make it ambiguous
 which one Big Replay is advancing. The runner still presses **Start**, **Split**,
-**Reset**, and **Pause** in LiveSplit: Big Replay never starts, resets, pauses, resumes,
-or finishes the timer. The finish stays manual. The detector uses the viewer's
-receptacle positions (`gourd-receptacles.js`), not monument flags, so any gourd within
+**Reset**, and **Pause** in LiveSplit: Big Replay never starts, resets, pauses, or
+resumes the timer. The finish is automatic when the endgame-room teleport is detected
+unless **Finish on endgame teleport** is unchecked. The detector uses the viewer's
 1 cm of a known slot fills it. A tower that is already full when recording attaches is
 baselined and never earns a split. Each enabled tower splits at most once per LiveSplit
 attempt; pauses, disconnects, undos, and new recording files do not replay stale splits.
@@ -112,8 +112,9 @@ attempt; pauses, disconnects, undos, and new recording files do not replay stale
 The route comes from the `.lss` named in LiveSplit's `settings.cfg`, and the current
 segment name is checked over the pipe before every split. `Tower 1`–`Tower 4` accept
 the four colored towers in completion order; `Black Tower`/`Final Tower` maps to the
-Black group and `Storage`/`Screw Tower`/`Overflow`/`ECA` maps to Storage. A segment
-named `BIG GAME` or anything else is manual: finishing the run stays a manual split.
+Black group and `Storage`/`Screw Tower`/`Overflow`/`ECA` maps to Storage. Any other
+segment is manual. The final segment is the finish: Big Replay sends it when the
+endgame-room teleport is detected, or leaves it for the runner when the checkbox is off.
 Per-tower checkboxes under **Split on** disable individual towers; uncheck any tower
 that has no matching segment in the route.
 LiveSplit **Game Time** needs a game-time source (a load-removal autosplitter or
@@ -123,6 +124,13 @@ advances and stores its **Real Time**, but the Game Time column stays blank. The
 window warns after such a split. Switch LiveSplit to **Real Time** or enable a
 game-time/load-removal source; switching to Real Time reveals the timestamp
 already stored for the current attempt.
+
+The endgame detector reuses the viewer's `SECRET_ROOM` box, but the finish fires when the
+**first located player** is inside for 0.1 seconds — two frames at the desktop capture
+rate. It deliberately does not wait for the viewer's 80% teleport consensus, which would
+add the slowest client's latency to the run; the room is far from every route. It does
+not require the congratulations popup, so it also works when the popup is missed.
+
 Big Replay reads the splits file and layout for a configured autosplitter and shows a
 warning naming it; it also warns if LiveSplit advances more than one segment without
 Big Replay sending the split. Remove the old autosplitter rather than ignoring the

@@ -21,7 +21,8 @@ public static class RecordingSession
     public static RecordingResult Record(GameStateReader reader, string outPath,
         double rate, double duration, CancellationToken cancellationToken,
         Action<RecordingStatus>? report = null, LiveSession? live = null,
-        TowerProgressTracker? towerProgress = null, Action<TowerCompletion>? towerCompleted = null)
+        TowerProgressTracker? towerProgress = null, Action<TowerCompletion>? towerCompleted = null,
+        EndgameTeleportTracker? endgame = null, Action<EndgameTeleport>? endgameReached = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(rate);
         if (!double.IsFinite(rate) || !double.IsFinite(duration))
@@ -61,6 +62,7 @@ public static class RecordingSession
         bool serverWasActive = false;
         var prevPlayers = new HashSet<uint>();
         towerProgress?.BeginSession();
+        endgame?.Reset();
         var prevFilled = new HashSet<int>();
         int prevCorpses = 0;
         try
@@ -208,6 +210,14 @@ public static class RecordingSession
                         {
                             towerCompleted(completion);
                         }
+                    }
+                }
+                if (endgame is not null)
+                {
+                    EndgameTeleport? teleport = endgame.ScanFrame(frame, frames);
+                    if (teleport is not null)
+                    {
+                        endgameReached?.Invoke(teleport.Value);
                     }
                 }
                 writer.WriteFrame(frame);

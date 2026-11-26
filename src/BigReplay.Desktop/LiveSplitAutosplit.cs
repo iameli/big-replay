@@ -21,6 +21,8 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
     private readonly TowerProgressTracker _towers;
     private readonly Channel<ObservedCompletion> _completions = Channel.CreateUnbounded<ObservedCompletion>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+    private readonly Channel<EndgameTeleport> _endgames = Channel.CreateUnbounded<EndgameTeleport>(
+        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
     private readonly CancellationTokenSource _stop = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly object _statusGate = new();
@@ -51,6 +53,10 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
     private string? _unexpectedSplitWarning;
     private int _unexpectedSplitWarningAttempt = -1;
     private long _lastConfigCheck;
+    private EndgameTeleport? _pendingEndgame;
+    private bool _endgameSplitSent;
+    private bool _endgameWaitLogged;
+    private volatile bool _finishOnEndgameTeleport = true;
 
     public LiveSplitAutosplit(TowerProgressTracker towers)
     {
@@ -84,6 +90,7 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
                 {
                     _pending.Clear();
                     _armed = false;
+                    _pendingEndgame = null;
                 }
                 SetStatus("LiveSplit autosplit is off.");
             }
@@ -97,6 +104,20 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
     public string Status
     {
         get { lock (_statusGate) return _status; }
+    }
+
+    /// <summary>Send the final split when the endgame-room teleport is detected.</summary>
+    public bool FinishOnEndgameTeleport
+    {
+        get => _finishOnEndgameTeleport;
+        set
+        {
+            _finishOnEndgameTeleport = value;
+            if (!value)
+            {
+                _pendingEndgame = null;
+            }
+        }
     }
 
     public void SetTowerEnabled(string tower, bool enabled)
@@ -133,6 +154,16 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
             return;
         }
         _completions.Writer.TryWrite(new ObservedCompletion(completion, _clock.ElapsedMilliseconds));
+    }
+
+    /// <summary>Non-blocking callback from the recording loop when the endgame room is reached.</summary>
+    public void ObserveEndgame(EndgameTeleport teleport)
+    {
+        if (Mode == LiveSplitMode.Off || !_finishOnEndgameTeleport)
+        {
+            return;
+        }
+        _endgames.Writer.TryWrite(teleport);
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -230,6 +261,8 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
             await TrySplitsAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        await ProcessEndgamesAsync(cancellationToken).ConfigureAwait(false);
+
         // A new recording session starts with an empty tracker. Baseline whatever is already
         // full on its first observed frame so attach/late-join never earns a split.
         long session = _towers.Session;
@@ -295,6 +328,7 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
             {
                 _attempt = snapshot.Attempt;
             }
+            _pendingEndgame = null;
             return;
         }
 
@@ -304,6 +338,9 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
             _attempt = snapshot.Attempt;
             _latched.Clear();
             _pending.Clear();
+            _endgameSplitSent = false;
+            _pendingEndgame = null;
+            _endgameWaitLogged = false;
             _sessionBaselined = false;
             _splitTimeWarning = null;
             if (_unexpectedSplitWarningAttempt != snapshot.Attempt)
@@ -469,29 +506,9 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
             _pending.Remove(match);
             if (confirmed)
             {
-                string lastSplit;
-                try
-                {
-                    lastSplit = (await _pipe.QueryAsync("getlastsplittime", cancellationToken)
-                        .ConfigureAwait(false)).Trim();
-                }
-                catch (Exception ex)
-                {
-                    lastSplit = "-";
-                    Log($"could not read the split timestamp: {ex.Message}");
-                }
-                if (lastSplit == "-")
-                {
-                    _splitTimeWarning = "last split has no timestamp";
-                    Log("split advanced but stored no timestamp: LiveSplit Game Time has no " +
-                        "source. Switch LiveSplit to Real Time or enable a game-time/load-removal source.");
-                }
-                else
-                {
-                    _splitTimeWarning = null;
-                }
                 Log($"split {match.Completion.Tower}: segment {snapshot.SplitIndex} \"{segment}\" " +
                     $"→ {after.SplitIndex}");
+                await CheckSplitTimestampAsync(cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -504,6 +521,159 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
                 break;
             }
         }
+    }
+
+    private async Task CheckSplitTimestampAsync(CancellationToken cancellationToken)
+    {
+        string lastSplit;
+        try
+        {
+            lastSplit = (await _pipe!.QueryAsync("getlastsplittime", cancellationToken)
+                .ConfigureAwait(false)).Trim();
+        }
+        catch (Exception ex)
+        {
+            lastSplit = "-";
+            Log($"could not read the split timestamp: {ex.Message}");
+        }
+        if (lastSplit == "-")
+        {
+            _splitTimeWarning = "last split has no timestamp";
+            Log("split advanced but stored no timestamp: LiveSplit Game Time has no " +
+                "source. Switch LiveSplit to Real Time or enable a game-time/load-removal source.");
+        }
+        else
+        {
+            _splitTimeWarning = null;
+        }
+    }
+
+    private async Task ProcessEndgamesAsync(CancellationToken cancellationToken)
+    {
+        while (_endgames.Reader.TryRead(out EndgameTeleport teleport))
+        {
+            if (Mode == LiveSplitMode.Off || !_finishOnEndgameTeleport)
+            {
+                continue;
+            }
+            _pendingEndgame = teleport;
+            _endgameWaitLogged = false;
+            Log($"endgame teleport at {FormatTime(teleport.Time)} " +
+                $"({teleport.Inside}/{teleport.Located} players in room)");
+        }
+        if (_pendingEndgame is null || _endgameSplitSent || _pipe is null ||
+            Mode == LiveSplitMode.Off || !_finishOnEndgameTeleport)
+        {
+            return;
+        }
+
+        LiveSplitSnapshot snapshot = await ReadStateAsync(cancellationToken).ConfigureAwait(false);
+        ApplySnapshot(snapshot);
+        if (_pendingEndgame is null || !_armed || snapshot.Phase != "Running")
+        {
+            Log($"endgame teleport; timer {snapshot.Phase}; not finishing — split manually if needed");
+            _pendingEndgame = null;
+            return;
+        }
+        if (snapshot.Attempt != _attempt)
+        {
+            _pendingEndgame = null;
+            return;
+        }
+
+        string segment = CurrentSegment(snapshot);
+        if (!IsFinishSegment(snapshot, segment))
+        {
+            if (!_endgameWaitLogged)
+            {
+                Log($"endgame teleport while segment {snapshot.SplitIndex} \"{segment}\"; " +
+                    "waiting for the final segment");
+                _endgameWaitLogged = true;
+            }
+            return;
+        }
+
+        if (Mode == LiveSplitMode.LogOnly)
+        {
+            Log($"would finish at segment {snapshot.SplitIndex} \"{segment}\" (endgame teleport)");
+            _endgameSplitSent = true;
+            _pendingEndgame = null;
+            return;
+        }
+
+        bool confirmed;
+        try
+        {
+            confirmed = await SendFinishSplitAsync(snapshot, segment, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            _endgameSplitSent = true;
+            _pendingEndgame = null;
+            throw;
+        }
+        _endgameSplitSent = true;
+        _pendingEndgame = null;
+        if (!confirmed)
+        {
+            Log("finish split not confirmed; not resending");
+        }
+    }
+
+    private bool IsFinishSegment(LiveSplitSnapshot snapshot, string segment)
+    {
+        if (_route is not null && snapshot.SplitIndex >= 0 &&
+            snapshot.SplitIndex < _route.Segments.Count)
+        {
+            if (snapshot.SplitIndex != _route.Segments.Count - 1)
+            {
+                return false;
+            }
+            return TowerSegmentRoute.Describe(segment) == "manual" ||
+                TowerSegmentRoute.IsFinishName(segment);
+        }
+        return TowerSegmentRoute.IsFinishName(segment);
+    }
+
+    private async Task<bool> SendFinishSplitAsync(LiveSplitSnapshot before, string segment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _pipe!.SendAsync("split", cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log($"could not write finish split ({ex.Message}); outcome unknown — not resending");
+            throw;
+        }
+
+        LiveSplitSnapshot after;
+        try
+        {
+            after = await ReadStateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log($"finish split sent but not confirmed ({ex.Message}); outcome unknown — not resending");
+            throw;
+        }
+
+        bool confirmed = after.SplitIndex > before.SplitIndex || after.Phase == "Ended";
+        if (confirmed)
+        {
+            Log($"finish: segment {before.SplitIndex} \"{segment}\" → {after.SplitIndex} " +
+                "(endgame teleport)");
+            await CheckSplitTimestampAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            Log($"finish split not confirmed (index {before.SplitIndex} → {after.SplitIndex}); " +
+                "not resending");
+        }
+        ApplySnapshot(after);
+        return confirmed;
     }
 
     private async Task LogOnlyAsync(CancellationToken cancellationToken)
@@ -639,6 +809,7 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
         {
             parts.Add("not armed");
         }
+        parts.Add(_finishOnEndgameTeleport ? "finish: auto on teleport" : "finish: manual");
         if (_gameName is not null && !_gameName.Contains("Big Walk", StringComparison.OrdinalIgnoreCase))
         {
             parts.Add($"game \"{_gameName}\"");
@@ -696,12 +867,14 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
         var pipe = Interlocked.Exchange(ref _pipe, null);
         pipe?.Dispose();
         _armed = false;
+        _pendingEndgame = null;
     }
 
     public async ValueTask DisposeAsync()
     {
         _stop.Cancel();
         _completions.Writer.TryComplete();
+        _endgames.Writer.TryComplete();
         if (_loop is not null)
         {
             try

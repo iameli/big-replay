@@ -373,4 +373,10 @@ public static class TowerSegmentRoute
         }
         return GenericTower.IsMatch(n) ? "any colored tower" : "manual";
     }
+
+    /// <summary>Common names for the manual finish segment. Used only when the route file is
+    /// unavailable; a loaded route uses its last segment instead.</summary>
+    public static bool IsFinishName(string segmentName) =>
+        Normalize(segmentName) is "biggame" or "finish" or "finished" or "congratulations"
+            or "congrats" or "ending" or "end" or "theend" or "credits";
 }

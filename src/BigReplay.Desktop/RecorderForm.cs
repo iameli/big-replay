@@ -37,6 +37,7 @@ internal sealed class RecorderForm : Form
     private readonly string? _liveError;
     private DateTime _copyNoticeUntil = DateTime.MinValue;
     private readonly TowerProgressTracker _towerTracker = new();
+    private readonly EndgameTeleportTracker _endgameTracker = new();
     private readonly LiveSplitAutosplit _liveSplit;
     private readonly ComboBox _liveSplitMode = new()
     {
@@ -125,7 +126,7 @@ internal sealed class RecorderForm : Form
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(28), ColumnCount = 1, RowCount = 15,
+            Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(28), ColumnCount = 1, RowCount = 16,
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         var brand = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = Padding.Empty };
@@ -177,6 +178,17 @@ internal sealed class RecorderForm : Form
             check.CheckedChanged += (_, _) => _liveSplit.SetTowerEnabled(tower, check.Checked);
             towerRow.Controls.Add(check);
         }
+        var finishRow = new FlowLayoutPanel
+        {
+            AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6),
+        };
+        var finishCheck = new CheckBox
+        {
+            Text = "Finish on endgame teleport", AutoSize = true, Checked = true,
+            Margin = new Padding(0, 0, 12, 0),
+        };
+        finishCheck.CheckedChanged += (_, _) => _liveSplit.FinishOnEndgameTeleport = finishCheck.Checked;
+        finishRow.Controls.Add(finishCheck);
         var folderTitle = new Label { Text = "Save replays to", AutoSize = true };
         var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 12, 0, 12) };
         buttons.Controls.Add(_pause);
@@ -200,6 +212,7 @@ internal sealed class RecorderForm : Form
         layout.Controls.Add(liveSplitTitle);
         layout.Controls.Add(liveSplitModeRow);
         layout.Controls.Add(towerRow);
+        layout.Controls.Add(finishRow);
         layout.Controls.Add(_liveSplitLabel);
         layout.Controls.Add(folderTitle);
         layout.Controls.Add(_folder);
@@ -464,7 +477,8 @@ internal sealed class RecorderForm : Form
                                 var layout = GameLayout.Attach(game, manifest);
                                 return RecordingSession.Record(new GameStateReader(game, layout), path, 10, 0, token,
                                     sample => ((IProgress<RecordingStatus>)progress).Report(sample), _liveSession,
-                                    _towerTracker, _liveSplit.Observe);
+                                    _towerTracker, _liveSplit.Observe,
+                                    _endgameTracker, _liveSplit.ObserveEndgame);
                             }, token);
                             if (result.Path is not null)
                             {
