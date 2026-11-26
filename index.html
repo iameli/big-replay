@@ -434,7 +434,7 @@
     </div>
   </details>
   <details class="sidebar-section" id="events-section" open>
-    <summary>Events</summary>
+    <summary>Log</summary>
     <div id="events"></div>
   </details>
 </div>
@@ -547,6 +547,8 @@ let markerSpriteBytes = 0, markerSpriteDpr = devicePixelRatio, markerLabelDirect
 
 let replay = null, frames = [], events = [], frameIdx = 0, playbackStartFrame = 0;
 let playing = false, speed = 1;
+let logRenderedCount = -1;
+let logCache = { eventsRef: null, depositsRef: null, eventsLength: -1, depositsLength: -1, entries: [] };
 // replaySource: the loaded file's bytes, kept for publishing. shared: the
 // Atmosphere record being viewed ({ did, handle, pds, rkey, cid, record, nicknames }).
 let replaySource = null, shared = null;
@@ -628,6 +630,10 @@ function playerColor(netId) {
 
 function gourdColor(name) {
   return PURPLE_GOURD_IDS.has(name) ? "#8053ac" : "#c64132";
+}
+
+function towerLabel(name) {
+  return name === "Storage" ? "Storage" : `${name} Tower`;
 }
 
 // Editing your own shared replay saves to its published record.
@@ -1360,7 +1366,9 @@ function refreshLive() {
     }
     if (now - liveReceptaclesAt >= LIVE_REFRESH_MS * 2) {
       liveReceptaclesAt = now;
+      const deposits = receptacles.deposits.length;
       receptacles.extend(frames);
+      if (receptacles.deposits.length !== deposits) renderEvents();
     }
     if (now - liveStructureAt >= LIVE_REFRESH_MS * 4) {
       liveStructureAt = now;
@@ -2075,6 +2083,7 @@ function tick() {
   render();
   updateStatus(fr);
   updateTowers();
+  syncLog();
 }
 
 function fmt(s) {
@@ -2209,16 +2218,65 @@ function updateTowers() {
   }
 }
 
+function logEntries() {
+  const deposits = receptacles.deposits || [];
+  if (events === logCache.eventsRef && deposits === logCache.depositsRef &&
+      events.length === logCache.eventsLength && deposits.length === logCache.depositsLength) {
+    return logCache.entries;
+  }
+  // Raw monument events are redundant once the frame-derived deposit log exists.
+  const entries = deposits.length
+    ? [...events.filter(ev => ev.type !== "gourd-pinned" && ev.type !== "tower-filled"), ...deposits]
+    : [...events];
+  entries.sort((a, b) => a.time - b.time);
+  logCache = {
+    eventsRef: events, depositsRef: deposits,
+    eventsLength: events.length, depositsLength: deposits.length, entries,
+  };
+  return entries;
+}
+
+function logEndAt(entries, time) {
+  let lo = 0, hi = entries.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (entries[mid].time <= time) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+// The log follows the replay clock: events appear as playback reaches them and
+// disappear when scrubbing backward. Only counts crossing an event time rebuild.
+function syncLog() {
+  const cutoff = frames[frameIdx]?.time ?? Infinity;
+  if (logEndAt(logEntries(), cutoff) !== logRenderedCount) renderEvents();
+}
+
 function renderEvents() {
+  const entries = logEntries();
+  const cutoff = frames[frameIdx]?.time ?? Infinity;
+  const end = logEndAt(entries, cutoff);
+  logRenderedCount = end;
+  const wasAtBottom = eventsEl.scrollHeight - eventsEl.scrollTop - eventsEl.clientHeight < 24;
+  const previousScrollTop = eventsEl.scrollTop;
   eventsEl.textContent = "";
-  for (const ev of events) {
+  for (let i = 0; i < end; i++) {
+    const ev = entries[i];
     const el = document.createElement("div");
     el.className = "ev";
     const time = document.createElement("span"), detail = document.createElement("span");
     time.className = "t"; time.textContent = fmt(ev.time);
-    const eventDetail = ev.detail && (ev.type === "player-joined" || ev.type === "player-left")
-      ? playerLabel(Number(ev.detail)) : ev.detail;
-    detail.className = "d"; detail.textContent = ev.type + (eventDetail ? " · " + eventDetail : "");
+    detail.className = "d";
+    if (ev.type === "gourd-deposited") {
+      const player = ev.netId ? playerLabel(ev.netId) : "Unknown player";
+      detail.textContent = `${player} deposited a gourd (${gourdName(ev.gourd)}) in ` +
+        `${towerLabel(ev.tower)} (${ev.filled}/${ev.total})`;
+    } else {
+      const eventDetail = ev.detail && (ev.type === "player-joined" || ev.type === "player-left")
+        ? playerLabel(Number(ev.detail)) : ev.detail;
+      detail.textContent = ev.type + (eventDetail ? " · " + eventDetail : "");
+    }
     el.append(time, detail);
     el.addEventListener("click", () => {
       setPlaying(false);
@@ -2227,6 +2285,8 @@ function renderEvents() {
     });
     eventsEl.appendChild(el);
   }
+  if (wasAtBottom) eventsEl.scrollTop = eventsEl.scrollHeight;
+  else eventsEl.scrollTop = previousScrollTop;
 }
 
 new ResizeObserver(() => {

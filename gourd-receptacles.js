@@ -64,6 +64,64 @@ const GOURD_RECEPTACLE_GROUPS = [
     [-119.95352, 48.1063, -448.02783],
   ] },
 ];
+
+// Display names for the 45 world gourds, pre-populated from MapGenie's puzzle
+// locations (category_id 27066) by fitting their latitude/longitude to this map.
+// Every pair matched within ~15 m. "Locked Box" uses its linked box marker
+// (location 930216), which lands ~1.5 m from gourd 116; the puzzle marker itself
+// is at the button across the valley.
+const GOURD_NAMES = Object.freeze({
+  100: "Little Patience",
+  101: "Tutorial Crane",
+  103: "Cannon",
+  104: "Easy Golf",
+  105: "Invisible Ink",
+  106: "Locked In",
+  107: "Crane",
+  108: "Tutorial Green",
+  109: "Split Circle",
+  113: "Red Parkour",
+  114: "Passing",
+  115: "GPS Box",
+  116: "Tutorial Box",
+  117: "Interrogation",
+  118: "Maze",
+  121: "Basketball",
+  122: "Stage",
+  123: "House House",
+  124: "Poses",
+  125: "Scribbles",
+  127: "Memory",
+  133: "Forget-Me-Not",
+  134: "Warehouse",
+  135: "Musical Chairs",
+  137: "Point and Click",
+  138: "Coordinate Box",
+  139: "Pegs",
+  140: "Tutorial Blue",
+  141: "Beach Houses",
+  142: "Big Patience",
+  143: "Telescopes",
+  144: "Kettles",
+  147: "Hundred Lights Red",
+  148: "Music Box",
+  149: "Climbing",
+  150: "Easy Music",
+  151: "Hard Music",
+  152: "Purple Parkour",
+  153: "Headless Parkour",
+  154: "Headless Chicken",
+  155: "Counting Heads",
+  156: "Hundred Lights Purple",
+  157: "Flare Box",
+  158: "Hard Golf",
+  159: "Hard Scribbles",
+});
+
+function gourdName(name) {
+  return GOURD_NAMES[name] ?? `Gourd ${name}`;
+}
+
 const GOURD_RECEPTACLE_TOLERANCE = 0.01; // One centimetre in XYZ, not proximity on the map.
 
 class GourdReceptacles {
@@ -79,6 +137,7 @@ class GourdReceptacles {
       return { name: group.name, start, count: group.positions.length,
         x: x / group.positions.length, z: z / group.positions.length };
     });
+    this.slotGroups = this.groups.flatMap((group, index) => Array(group.count).fill(index));
     this.setReplay([]);
   }
 
@@ -98,6 +157,8 @@ class GourdReceptacles {
     this.frame = null;
     this.current = this.slots.map(() => null);
     this.locations = new Map();
+    this.holders = new Map();
+    this.deposits = [];
     this.scanned = 0;
     this.scan(frames);
   }
@@ -117,6 +178,21 @@ class GourdReceptacles {
 
   scan(frames) {
     const current = this.current, locations = this.locations;
+    // A gourd entering a receptacle is a deposit. Attribute it to the player who
+    // held it in the preceding frame, falling back to the last observed holder
+    // when an intervening sample was dropped.
+    const holderOf = (frameIndex, name) => {
+      if (frameIndex > 0) {
+        const previous = frames[frameIndex - 1];
+        for (const player of previous.players || []) {
+          if (player.carriedGourd === name) return player.netId;
+        }
+        for (const gourd of previous.gourds || []) {
+          if (gourd.name === name && gourd.holderNetId) return gourd.holderNetId;
+        }
+      }
+      return this.holders.get(name);
+    };
     // Record changes only. Missing observations (including the empty shutdown
     // frame) retain the last known placement; an observed move clears it.
     const change = (slot, name, frame) => {
@@ -127,14 +203,39 @@ class GourdReceptacles {
       else history.push({ frame, name });
     };
     for (let frame = this.scanned; frame < frames.length; frame++) {
-      for (const gourd of frames[frame].gourds || []) {
+      const data = frames[frame];
+      for (const player of data.players || []) {
+        if (player.carriedGourd) this.holders.set(player.carriedGourd, player.netId);
+      }
+      for (const gourd of data.gourds || []) {
+        if (gourd.holderNetId) this.holders.set(gourd.name, gourd.holderNetId);
+      }
+      for (const gourd of data.gourds || []) {
         const slot = this.slotAt(gourd), previous = locations.get(gourd.name);
         if (previous !== undefined && previous !== slot && current[previous] === gourd.name) {
           change(previous, null, frame);
         }
         if (slot >= 0) {
+          const deposited = frame > 0 && previous !== slot && current[slot] !== gourd.name;
           change(slot, gourd.name, frame);
           locations.set(gourd.name, slot);
+          if (deposited) {
+            const group = this.groups[this.slotGroups[slot]];
+            let filled = 0;
+            for (let i = group.start; i < group.start + group.count; i++) {
+              if (current[i] !== null) filled++;
+            }
+            this.deposits.push({
+              time: data.time,
+              type: "gourd-deposited",
+              frame,
+              gourd: gourd.name,
+              netId: holderOf(frame, gourd.name) ?? 0,
+              tower: group.name,
+              filled,
+              total: group.count,
+            });
+          }
         } else locations.delete(gourd.name);
       }
     }

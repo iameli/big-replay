@@ -323,7 +323,7 @@ automatically. If a test clip ends before the replay, its last frame remains vis
 while the replay continues.
 
 The sidebar groups Map display, Player video, Player names & colors, Tower progress,
-Map alignment, and Events into collapsible sections. An AT Protocol record section
+Map alignment, and Log into collapsible sections. An AT Protocol record section
 appears when the hash route points at a record. Player video and Map alignment start
 collapsed; the other sections start open. **Map display** contains the Trails
 dropdown and marker legend.
@@ -369,7 +369,7 @@ Connecting opens the run at its **live point** and keeps following it from there
 - At the newest frame the viewer keeps playing instead of stopping, so it stays on
   the live edge as frames arrive. The status line reads `LIVE` there and
   `m:ss behind live` while you are reviewing earlier parts.
-- The map, trails, tower progress, event list and player colours all update during
+- The map, trails, tower progress, log and player colours all update during
   the run. Players who join mid-walk get their own colour, label and camera button.
 - When a walk ends the viewer keeps the finished run readable and waits for the
   next one; the next walk starts as a new session on the same connection.
@@ -467,6 +467,18 @@ scrubbing backward removes later placements. Missing gourd samples, including
 an empty shutdown frame, retain the last observed placement; an observed move
 away clears it. Loading another replay resets all occupancy. Unobserved slots
 remain empty even when a recording's monument flags claim completion.
+
+The **Log** derives human-readable deposit lines from the frame stream:
+`<player> deposited a gourd (<name>) in <tower> (<filled>/<total>)`. The depositor is
+whoever carried the gourd in the preceding frame, falling back to the last observed
+holder if a sample was dropped. Gourd names are the `GOURD_NAMES` table in
+`gourd-receptacles.js`. Once frame-derived deposits exist, the raw
+`gourd-pinned`/`tower-filled` events are hidden to avoid duplicate lines.
+
+The log follows the replay clock: it shows only events at or before the selected
+frame, appends lines as playback reaches them, and removes later lines when you
+scrub backward. When the panel is already scrolled to the bottom it follows new
+lines; scrolling up leaves your position alone.
 
 The **Trails** dropdown offers **Off**, **Recent** (the last 40 frame intervals),
 and **Persistent · start to now**. Persistent trails retain each player's history

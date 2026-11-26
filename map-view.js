@@ -233,7 +233,7 @@ class MapView {
     this.sources = [
       ...frame.players.map(p => ({ key: `p${p.netId}`, label: `${this.playerLabel(p.netId)} at ${frame.time.toFixed(2)}s`, x: p.x, z: p.z })),
       ...landmarks.map(l => ({ key: `l${l.id}`, label: `${l.label} (${l.id})`, x: l.x, z: l.z })),
-      ...frame.gourds.map(g => ({ key: `g${g.name}`, label: `Gourd ${g.name}`, x: g.x, z: g.z })),
+      ...frame.gourds.map(g => ({ key: `g${g.name}`, label: `Gourd ${gourdName(g.name)} (#${g.name})`, x: g.x, z: g.z })),
     ].filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
     this.sourceSelect.replaceChildren(...this.sources.map(p => new Option(p.label, p.key)));
     const index = this.sources.findIndex(p => p.key === selected);
