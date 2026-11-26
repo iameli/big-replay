@@ -20,7 +20,8 @@ public static class RecordingSession
 
     public static RecordingResult Record(GameStateReader reader, string outPath,
         double rate, double duration, CancellationToken cancellationToken,
-        Action<RecordingStatus>? report = null, LiveSession? live = null)
+        Action<RecordingStatus>? report = null, LiveSession? live = null,
+        TowerProgressTracker? towerProgress = null, Action<TowerCompletion>? towerCompleted = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(rate);
         if (!double.IsFinite(rate) || !double.IsFinite(duration))
@@ -59,6 +60,7 @@ public static class RecordingSession
         bool headerWritten = false;
         bool serverWasActive = false;
         var prevPlayers = new HashSet<uint>();
+        towerProgress?.BeginSession();
         var prevFilled = new HashSet<int>();
         int prevCorpses = 0;
         try
@@ -197,6 +199,17 @@ public static class RecordingSession
                     Gourds = gourds,
                     Monuments = monuments,
                 };
+                if (towerProgress is not null)
+                {
+                    IReadOnlyList<TowerCompletion> completions = towerProgress.ScanFrame(frame, frames);
+                    if (towerCompleted is not null)
+                    {
+                        foreach (var completion in completions)
+                        {
+                            towerCompleted(completion);
+                        }
+                    }
+                }
                 writer.WriteFrame(frame);
                 live?.PublishFrame(frame);
                 frames++;

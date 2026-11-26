@@ -19,6 +19,7 @@ internal static class Program
         bool liveEnabled = true;
         int livePort = 8787;
         string liveBind = "127.0.0.1";
+        string liveSplitMode = "off";
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -40,6 +41,9 @@ internal static class Program
                 case "--no-live":
                     liveEnabled = false;
                     break;
+                case "--livesplit" when i + 1 < args.Length:
+                    liveSplitMode = args[++i];
+                    break;
                 case "--live-port" when i + 1 < args.Length:
                     if (int.TryParse(args[++i], out int port))
                     {
@@ -60,6 +64,6 @@ internal static class Program
                 "Big Replay", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        Application.Run(new RecorderForm(exitWithGame, gamePid, graceSeconds, liveEnabled, livePort, liveBind));
+        Application.Run(new RecorderForm(exitWithGame, gamePid, graceSeconds, liveEnabled, livePort, liveBind, liveSplitMode));
     }
 }

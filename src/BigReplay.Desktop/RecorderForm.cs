@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Replay.Format;
 using System.Diagnostics;
 using BigReplay.Live;
 using BigReplay.Recorder;
@@ -35,10 +36,49 @@ internal sealed class RecorderForm : Form
     private LiveWebSocketServer? _liveServer;
     private readonly string? _liveError;
     private DateTime _copyNoticeUntil = DateTime.MinValue;
+    private readonly TowerProgressTracker _towerTracker = new();
+    private readonly LiveSplitAutosplit _liveSplit;
+    private readonly ComboBox _liveSplitMode = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList, Width = 150, Margin = new Padding(0, 0, 16, 0),
+    };
+    private readonly FlowLayoutPanel _towerToggles = new()
+    {
+        AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 8),
+    };
+    private readonly Label _liveSplitLabel = new()
+    {
+        AutoSize = true, ForeColor = Color.FromArgb(85, 92, 104), Margin = new Padding(0, 0, 0, 16),
+    };
+    private readonly System.Windows.Forms.Timer _liveSplitTimer = new() { Interval = 500 };
 
     public RecorderForm(bool exitWithGame = false, int? gamePid = null, int graceSeconds = 25,
-        bool liveEnabled = true, int livePort = 8787, string liveBind = "127.0.0.1")
+        bool liveEnabled = true, int livePort = 8787, string liveBind = "127.0.0.1",
+        string liveSplitMode = "off")
     {
+        _liveSplit = new LiveSplitAutosplit(_towerTracker);
+        _liveSplitMode.Items.AddRange(["Off", "Log only", "Send splits"]);
+        _liveSplitMode.SelectedIndex = liveSplitMode.ToLowerInvariant() switch
+        {
+            "log" or "log-only" or "logonly" => 1,
+            "split" or "send" or "send-splits" => 2,
+            _ => 0,
+        };
+        _liveSplit.Mode = _liveSplitMode.SelectedIndex switch
+        {
+            1 => LiveSplitMode.LogOnly,
+            2 => LiveSplitMode.Split,
+            _ => LiveSplitMode.Off,
+        };
+        _liveSplitMode.SelectedIndexChanged += (_, _) =>
+        {
+            _liveSplit.Mode = _liveSplitMode.SelectedIndex switch
+            {
+                1 => LiveSplitMode.LogOnly,
+                2 => LiveSplitMode.Split,
+                _ => LiveSplitMode.Off,
+            };
+        };
         _exitWithGame = exitWithGame;
         _gamePid = gamePid;
         _graceSeconds = graceSeconds;
@@ -68,6 +108,8 @@ internal sealed class RecorderForm : Form
         {
             _liveTimer.Stop();
             _liveTimer.Dispose();
+            _liveSplitTimer.Stop();
+            _liveSplitTimer.Dispose();
             _lifetime.Cancel();
             _lifetime.Dispose();
             _logoBitmap.Dispose();
@@ -83,7 +125,7 @@ internal sealed class RecorderForm : Form
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(28), ColumnCount = 1, RowCount = 11,
+            Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(28), ColumnCount = 1, RowCount = 15,
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         var brand = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = Padding.Empty };
@@ -103,6 +145,38 @@ internal sealed class RecorderForm : Form
         _file.Margin = new Padding(0, 0, 0, 8);
         _lastSaved.Margin = new Padding(0, 0, 0, 20);
         _liveLabel.Margin = new Padding(0, 0, 0, 16);
+        var liveSplitTitle = new Label
+        {
+            Text = "LiveSplit autosplit", AutoSize = true,
+            Font = new Font(Font.FontFamily, 12, FontStyle.Bold), Margin = new Padding(0, 0, 0, 6),
+        };
+        var liveSplitModeRow = new FlowLayoutPanel
+        {
+            AutoSize = true, WrapContents = false, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 4),
+        };
+        liveSplitModeRow.Controls.Add(new Label { Text = "Mode", AutoSize = true, Margin = new Padding(0, 5, 8, 0) });
+        liveSplitModeRow.Controls.Add(_liveSplitMode);
+        var towerRow = new FlowLayoutPanel
+        {
+            AutoSize = true, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 6),
+        };
+        towerRow.Controls.Add(new Label { Text = "Split on", AutoSize = true, Margin = new Padding(0, 5, 8, 0) });
+        foreach (var group in GourdReceptacles.Groups)
+        {
+            string tower = group.Name;
+            string label = tower switch
+            {
+                "Black" => "Final (Black)",
+                "Storage" => "Storage/Overflow",
+                _ => tower,
+            };
+            var check = new CheckBox
+            {
+                Text = label, AutoSize = true, Checked = true, Margin = new Padding(0, 0, 12, 0),
+            };
+            check.CheckedChanged += (_, _) => _liveSplit.SetTowerEnabled(tower, check.Checked);
+            towerRow.Controls.Add(check);
+        }
         var folderTitle = new Label { Text = "Save replays to", AutoSize = true };
         var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 12, 0, 12) };
         buttons.Controls.Add(_pause);
@@ -123,7 +197,10 @@ internal sealed class RecorderForm : Form
         layout.Controls.Add(_detail);
         layout.Controls.Add(_file);
         layout.Controls.Add(_lastSaved);
-        layout.Controls.Add(_liveLabel);
+        layout.Controls.Add(liveSplitTitle);
+        layout.Controls.Add(liveSplitModeRow);
+        layout.Controls.Add(towerRow);
+        layout.Controls.Add(_liveSplitLabel);
         layout.Controls.Add(folderTitle);
         layout.Controls.Add(_folder);
         layout.Controls.Add(buttons);
@@ -132,7 +209,7 @@ internal sealed class RecorderForm : Form
         layout.SizeChanged += (_, _) =>
         {
             int width = Math.Max(100, layout.ClientSize.Width - layout.Padding.Horizontal - 6);
-            foreach (var label in new[] { _status, _detail, _file, _lastSaved, _liveLabel, hint })
+            foreach (var label in new[] { _status, _detail, _file, _lastSaved, _liveLabel, _liveSplitLabel, hint })
             {
                 label.MaximumSize = new Size(width, 0);
             }
@@ -162,6 +239,9 @@ internal sealed class RecorderForm : Form
             StartMonitoring();
             UpdateLiveStatus();
             _liveTimer.Start();
+            _liveSplitTimer.Tick += (_, _) => _liveSplitLabel.Text = _liveSplit.Status;
+            _liveSplitTimer.Start();
+            _liveSplit.Start();
             if (_exitWithGame)
             {
                 _ = ExitWatcherAsync(_lifetime.Token);
@@ -383,7 +463,8 @@ internal sealed class RecorderForm : Form
                             {
                                 var layout = GameLayout.Attach(game, manifest);
                                 return RecordingSession.Record(new GameStateReader(game, layout), path, 10, 0, token,
-                                    sample => ((IProgress<RecordingStatus>)progress).Report(sample), _liveSession);
+                                    sample => ((IProgress<RecordingStatus>)progress).Report(sample), _liveSession,
+                                    _towerTracker, _liveSplit.Observe);
                             }, token);
                             if (result.Path is not null)
                             {
@@ -455,6 +536,8 @@ internal sealed class RecorderForm : Form
             _stop?.Cancel();
             await _runTask;
             _stop?.Dispose();
+            _liveSplitTimer.Stop();
+            await _liveSplit.DisposeAsync();
             if (_liveServer is not null)
             {
                 // Clean close for viewers: they see the socket go away rather than a timeout.

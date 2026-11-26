@@ -67,6 +67,10 @@ The portable ZIP does not register Windows startup automatically.
   watch the run live as it happens (see
   [Live replay](#live-replay)). `--no-live`, `--live-port` and `--live-bind` change
   this.
+- **LiveSplit autosplit** is opt-in (default **Off**). Choose **Log only** or
+  **Send splits** in the window. Big Replay never starts, resets, pauses, or resumes
+  the timer; it only sends `split` when LiveSplit's current segment names the tower
+  that just became full. See [LiveSplit autosplit](#livesplit-autosplit).
 - If the game exits, the replay is finished and the app watches for the next launch.
 - When a recorded walk drops to **zero players**, its replay is finished automatically.
   The app waits for players again and records the next walk in a new file, even if
@@ -85,6 +89,52 @@ Windows shutdown, or power loss can also leave an unfinished file.
 There is no grace period: even a brief observed drop to zero splits the file. The
 final zero-player frame and its player-left/run-ended events remain in the old
 replay. Waiting in menus before any players appear does not create empty replays.
+
+### LiveSplit autosplit
+
+LiveSplit support is off by default. Set **Mode** to **Log only** to write what the
+detector would do to `Documents/BigReplay/livesplit.log`, or **Send splits** to let it
+advance the timer. The window shows `waiting for LiveSplit`, `waiting for gourd data`,
+`armed`, the current LiveSplit segment, and the last action.
+
+Big Replay connects to LiveSplit's `\\.\pipe\LiveSplit` on the same Windows machine.
+LiveSplit starts that named pipe automatically on launch; the **Server** setting only
+enables TCP/WebSocket, so no plugin, port, or server toggle is needed. Run **one**
+LiveSplit instance — two windows create two independent timers and make it ambiguous
+which one Big Replay is advancing. The runner still presses **Start**, **Split**,
+**Reset**, and **Pause** in LiveSplit: Big Replay never starts, resets, pauses, resumes,
+or finishes the timer. The finish stays manual. The detector uses the viewer's
+receptacle positions (`gourd-receptacles.js`), not monument flags, so any gourd within
+1 cm of a known slot fills it. A tower that is already full when recording attaches is
+baselined and never earns a split. Each enabled tower splits at most once per LiveSplit
+attempt; pauses, disconnects, undos, and new recording files do not replay stale splits.
+
+The route comes from the `.lss` named in LiveSplit's `settings.cfg`, and the current
+segment name is checked over the pipe before every split. `Tower 1`–`Tower 4` accept
+the four colored towers in completion order; `Black Tower`/`Final Tower` maps to the
+Black group and `Storage`/`Screw Tower`/`Overflow`/`ECA` maps to Storage. A segment
+named `BIG GAME` or anything else is manual: finishing the run stays a manual split.
+Per-tower checkboxes under **Split on** disable individual towers; uncheck any tower
+that has no matching segment in the route.
+LiveSplit **Game Time** needs a game-time source (a load-removal autosplitter or
+another component that calls `SetGameTime`). Big Replay deliberately sends no
+game-time commands, so with Game Time selected and no source, a split still
+advances and stores its **Real Time**, but the Game Time column stays blank. The
+window warns after such a split. Switch LiveSplit to **Real Time** or enable a
+game-time/load-removal source; switching to Real Time reveals the timestamp
+already stored for the current attempt.
+Big Replay reads the splits file and layout for a configured autosplitter and shows a
+warning naming it; it also warns if LiveSplit advances more than one segment without
+Big Replay sending the split. Remove the old autosplitter rather than ignoring the
+warning — it will double-split.
+
+**Disable any old Big Walk autosplitter first**, including one embedded in the
+LiveSplit layout (Layout → Edit Layout → Layout Settings → Auto Splitting, or the
+split's **Auto Splitting** section). Two producers advancing the same timer will
+double-split or split into the wrong segment.
+
+For source launches, `--livesplit log` and `--livesplit split` set the initial mode;
+otherwise it starts off.
 
 ### Run or package from source
 
