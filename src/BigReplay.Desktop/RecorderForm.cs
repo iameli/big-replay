@@ -33,16 +33,16 @@ internal sealed class RecorderForm : Form
         AutoSize = true, Visible = false, Margin = new Padding(10, 1, 0, 0),
         ForeColor = ConnectedColor,
     };
+    private readonly ComboBox _startPlayers = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList, Width = 150, Margin = new Padding(10, 0, 0, 2),
+    };
     private readonly Button _towerMenu = new()
     {
-        AutoSize = true, Text = "Tower splits ▾", Padding = new Padding(10, 4, 10, 4),
-        Margin = new Padding(0, 0, 0, 6),
+        AutoSize = true, Text = "Tower Splits ▾", Padding = new Padding(10, 4, 10, 4),
+        Margin = new Padding(14, 0, 0, 0),
     };
     private readonly ContextMenuStrip _towerMenuItems = new();
-    private readonly Button _pause = new()
-    {
-        AutoSize = true, Text = "Pause recording", Padding = new Padding(12, 6, 12, 6),
-    };
     private readonly Button _openFolder = new()
     {
         AutoSize = true, Text = "Open recordings folder", Padding = new Padding(12, 6, 12, 6),
@@ -71,6 +71,7 @@ internal sealed class RecorderForm : Form
     private Task _runTask = Task.CompletedTask;
     private string? _outputDirectory;
     private string? _currentFileName;
+    private bool _recordingActive;
     private string _lastSavedLine = "No replay saved yet.";
     private int? _gamePid;
     private bool _closing;
@@ -90,15 +91,32 @@ internal sealed class RecorderForm : Form
             "log" or "log-only" or "logonly" or "off" => false,
             _ => null,
         };
-        bool sendSplits = requestedSend ?? LoadSendSplits();
+        DesktopSettings saved = LoadSettings();
+        bool sendSplits = requestedSend ?? saved.SendSplits;
+        int startPlayers = Math.Clamp(saved.AutoStartPlayers, 0, 12);
         _liveSplit = new LiveSplitAutosplit(_towerTracker);
         _sendSplits.Checked = sendSplits;
         _liveSplit.Mode = sendSplits ? LiveSplitMode.Split : LiveSplitMode.LogOnly;
+        _startPlayers.DrawMode = DrawMode.OwnerDrawFixed;
+        _startPlayers.ItemHeight = 40;
+        _startPlayers.DrawItem += DrawStartPlayerItem;
+        _startPlayers.Items.Add("Off");
+        for (int i = 1; i <= 12; i++)
+        {
+            _startPlayers.Items.Add(i == 1 ? "1 player" : $"{i} players");
+        }
+        _startPlayers.SelectedIndex = startPlayers;
+        _liveSplit.StartAtPlayers = startPlayers;
         _sendSplits.CheckedChanged += (_, _) =>
         {
             _liveSplit.Mode = _sendSplits.Checked ? LiveSplitMode.Split : LiveSplitMode.LogOnly;
-            SaveSendSplits(_sendSplits.Checked);
+            SaveSettings();
             UpdateLiveSplitIndicator();
+        };
+        _startPlayers.SelectedIndexChanged += (_, _) =>
+        {
+            _liveSplit.StartAtPlayers = _startPlayers.SelectedIndex;
+            SaveSettings();
         };
         _exitWithGame = exitWithGame;
         _gamePid = gamePid;
@@ -192,6 +210,18 @@ internal sealed class RecorderForm : Form
         liveSplitRow.Controls.Add(_sendSplits);
         liveSplitRow.Controls.Add(_liveSplitState);
 
+        var autoStartRow = new FlowLayoutPanel
+        {
+            AutoSize = true, WrapContents = false, Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 8),
+        };
+        autoStartRow.Controls.Add(new Label
+        {
+            Text = "Auto-start at", AutoSize = true, Margin = new Padding(0, 5, 0, 0),
+        });
+        autoStartRow.Controls.Add(_startPlayers);
+        autoStartRow.Controls.Add(_towerMenu);
+
         _towerMenuItems.Items.Add(new ToolStripMenuItem("Split on") { Enabled = false });
         foreach (var group in GourdReceptacles.Groups)
         {
@@ -220,7 +250,7 @@ internal sealed class RecorderForm : Form
         content.Controls.Add(statusRow);
         content.Controls.Add(_saveLine);
         content.Controls.Add(liveSplitRow);
-        content.Controls.Add(_towerMenu);
+        content.Controls.Add(autoStartRow);
 
         var folderTitle = new Label
         {
@@ -232,7 +262,6 @@ internal sealed class RecorderForm : Form
         {
             AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 12, 0, 0),
         };
-        buttons.Controls.Add(_pause);
         buttons.Controls.Add(_openFolder);
         _copyLive.Visible = _liveServer is not null;
         buttons.Controls.Add(_copyLive);
@@ -264,27 +293,12 @@ internal sealed class RecorderForm : Form
             }
         };
         _copyLive.Click += (_, _) => CopyLiveLink();
-        _pause.Click += async (_, _) =>
-        {
-            if (_runTask.IsCompleted)
-            {
-                StartMonitoring();
-            }
-            else
-            {
-                _pause.Enabled = false;
-                SetStatus("Finishing recording", WaitingColor, spinning: true);
-                _stop!.Cancel();
-                await _runTask;
-                if (!_closing)
-                {
-                    _pause.Enabled = true;
-                }
-            }
-        };
         _openFolder.Click += (_, _) => OpenFolder();
         Shown += (_, _) =>
         {
+            _startPlayers.SelectedIndex = -1;
+            _startPlayers.SelectedIndex = startPlayers;
+            _startPlayers.Refresh();
             StartMonitoring();
             UpdateLiveStatus();
             _liveTimer.Start();
@@ -331,9 +345,35 @@ internal sealed class RecorderForm : Form
             return;
         }
         _liveSplitState.Visible = true;
+        if (_liveSplit.IsCountingDown)
+        {
+            _liveSplitState.Text = $"Starting in {_liveSplit.CountdownSecondsRemaining}";
+            _liveSplitState.ForeColor = ConnectedColor;
+            return;
+        }
         bool connected = _liveSplit.IsConnected;
         _liveSplitState.Text = connected ? "Connected" : "Checking for LiveSplit";
         _liveSplitState.ForeColor = connected ? LiveSplitConnectedColor : ConnectedColor;
+    }
+
+    private void DrawStartPlayerItem(object? sender, DrawItemEventArgs e)
+    {
+        int index = e.Index >= 0 ? e.Index : _startPlayers.SelectedIndex;
+        if (index < 0 || index >= _startPlayers.Items.Count)
+        {
+            return;
+        }
+        e.DrawBackground();
+        string text = _startPlayers.GetItemText(_startPlayers.Items[index]) ?? string.Empty;
+        Color color = (e.State & DrawItemState.Selected) != 0
+            ? SystemColors.HighlightText
+            : e.ForeColor;
+        TextRenderer.DrawText(e.Graphics, text, _startPlayers.Font, e.Bounds, color,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        if ((e.State & DrawItemState.Focus) != 0)
+        {
+            e.DrawFocusRectangle();
+        }
     }
 
     private static string SettingsPath()
@@ -346,24 +386,25 @@ internal sealed class RecorderForm : Form
         return Path.Combine(root, "BigReplay", "settings.json");
     }
 
-    private static bool LoadSendSplits()
+    private static DesktopSettings LoadSettings()
     {
         try
         {
             string path = SettingsPath();
             if (!File.Exists(path))
             {
-                return false;
+                return new DesktopSettings();
             }
-            return JsonSerializer.Deserialize<DesktopSettings>(File.ReadAllText(path))?.SendSplits == true;
+            return JsonSerializer.Deserialize<DesktopSettings>(File.ReadAllText(path))
+                ?? new DesktopSettings();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return false;
+            return new DesktopSettings();
         }
     }
 
-    private static void SaveSendSplits(bool sendSplits)
+    private void SaveSettings()
     {
         try
         {
@@ -373,7 +414,12 @@ internal sealed class RecorderForm : Form
             {
                 Directory.CreateDirectory(directory);
             }
-            File.WriteAllText(path, JsonSerializer.Serialize(new DesktopSettings { SendSplits = sendSplits }));
+            var settings = new DesktopSettings
+            {
+                SendSplits = _sendSplits.Checked,
+                AutoStartPlayers = Math.Clamp(_startPlayers.SelectedIndex, 0, 12),
+            };
+            File.WriteAllText(path, JsonSerializer.Serialize(settings));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -384,6 +430,7 @@ internal sealed class RecorderForm : Form
     private sealed class DesktopSettings
     {
         public bool SendSplits { get; set; }
+        public int AutoStartPlayers { get; set; } = 12;
     }
 
     private void CopyLiveLink()
@@ -408,7 +455,6 @@ internal sealed class RecorderForm : Form
     {
         _stop?.Dispose();
         _stop = new CancellationTokenSource();
-        _pause.Text = "Pause recording";
         _runTask = MonitorAsync(_stop.Token);
     }
 
@@ -524,10 +570,11 @@ internal sealed class RecorderForm : Form
             ManifestLoader.Load(manifest);
             var progress = new Progress<RecordingStatus>(sample =>
             {
-                if (token.IsCancellationRequested)
+                if (token.IsCancellationRequested || !_recordingActive)
                 {
                     return;
                 }
+                _liveSplit.ObservePlayers(sample.Players);
                 if (sample.Frames == 0)
                 {
                     SetStatus("Waiting for Walk", ConnectedColor, spinning: true);
@@ -543,6 +590,9 @@ internal sealed class RecorderForm : Form
             });
             while (!token.IsCancellationRequested)
             {
+                try
+                {
+                _liveSplit.ObservePlayers(0);
                 SetStatus("Waiting for Game", WaitingColor, spinning: true);
                 GameProcess? game = null;
                 var processes = Process.GetProcessesByName(GameProcess.ProcessName);
@@ -569,6 +619,7 @@ internal sealed class RecorderForm : Form
                             $"bigreplay-{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid().ToString("N")[..8]}.replay.json.gz");
                         _currentFileName = Path.GetFileName(path);
                         _saveLine.Text = $"Current: {_currentFileName}";
+                        _recordingActive = true;
                         try
                         {
                             var result = await Task.Run(() =>
@@ -595,10 +646,18 @@ internal sealed class RecorderForm : Form
                         finally
                         {
                             _currentFileName = null;
+                            _recordingActive = false;
                         }
                     }
                 }
                 await Task.Delay(2000, token);
+                }
+                catch (Exception ex) when (!token.IsCancellationRequested)
+                {
+                    SetStatus("Recording stopped", RecordingColor, spinning: false);
+                    _saveLine.Text = ex.Message;
+                    await Task.Delay(2000, token);
+                }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
@@ -613,11 +672,6 @@ internal sealed class RecorderForm : Form
             }
             return;
         }
-        finally
-        {
-            _pause.Text = "Resume recording";
-        }
-        SetStatus("Paused", WaitingColor, spinning: false);
     }
 
     private void SetStatus(string title, Color color, bool spinning)
@@ -650,7 +704,6 @@ internal sealed class RecorderForm : Form
             base.OnFormClosing(e);
             if (_closing) return;
             _closing = true;
-            _pause.Enabled = false;
             SetStatus("Finishing recording", WaitingColor, spinning: true);
             _stop?.Cancel();
             await _runTask;

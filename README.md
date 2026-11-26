@@ -99,17 +99,29 @@ default: log-only mode writes what the detector would do to
 remembered in `%LOCALAPPDATA%\BigReplay\settings.json`. The checkbox shows a green
 **Connected** or blue **Checking for LiveSplit** indicator when checked.
 
+The **Auto-start at** dropdown (Off, 1–12 players) is remembered too. When the recording
+sees that many connected players, it shows **Starting in 10** next to the checkbox and
+sends `start` when the countdown reaches zero. The countdown cancels if the player count
+drops or the timer is already Running, Paused, or Ended. Auto-start writes only when
+**Send splits** is checked; Log only logs `would start`. The default is 12 players.
+To see the countdown in LiveSplit itself, set the run's **Time Offset** (Edit Run) to
+`-00:00:10` and save the splits. Big Replay reads the saved `.lss` offset; a nonzero
+offset makes it send `start` as soon as the player threshold is reached, so LiveSplit
+shows the negative countdown. With a zero offset, Big Replay runs its own 10-second
+countdown. LiveSplit's named-pipe server has no command to set this offset.
+
 Big Replay connects to LiveSplit's `\\.\pipe\LiveSplit` on the same Windows machine.
 LiveSplit starts that named pipe automatically on launch; the **Server** setting only
 enables TCP/WebSocket, so no plugin, port, or server toggle is needed. Run **one**
 LiveSplit instance — two windows create two independent timers and make it ambiguous
-which one Big Replay is advancing. The runner still presses **Start**, **Split**,
-**Reset**, and **Pause** in LiveSplit: Big Replay never starts, resets, pauses, or
-resumes the timer. The finish is automatic when the endgame-room teleport is detected
-unless **Finish on endgame teleport** is unchecked. The detector uses the viewer's
-1 cm of a known slot fills it. A tower that is already full when recording attaches is
-baselined and never earns a split. Each enabled tower splits at most once per LiveSplit
-attempt; pauses, disconnects, undos, and new recording files do not replay stale splits.
+which one Big Replay is advancing. The only automatic timer writes are the countdown
+`start` and the splits; Reset and Pause stay manual, and starting by hand still works.
+The finish is automatic when the endgame-room teleport is detected unless **Finish on
+endgame teleport** is unchecked. The detector uses the viewer's receptacle positions
+(`gourd-receptacles.js`), not monument flags, so any gourd within 1 cm of a known slot
+fills it. A tower that is already full when recording attaches is baselined and never
+earns a split. Each enabled tower splits at most once per LiveSplit attempt; pauses,
+disconnects, undos, and new recording files do not replay stale splits.
 
 The route comes from the `.lss` named in LiveSplit's `settings.cfg`, and the current
 segment name is checked over the pipe before every split. `Tower 1`–`Tower 4` accept

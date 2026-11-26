@@ -55,6 +55,10 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
     private bool _endgameSplitSent;
     private bool _endgameWaitLogged;
     private volatile bool _finishOnEndgameTeleport = true;
+    private int _startAtPlayers = 12;
+    private int _playerCount;
+    private long _countdownEnds;
+    private volatile bool _autoStartAttempted;
 
     public LiveSplitAutosplit(TowerProgressTracker towers)
     {
@@ -82,6 +86,8 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
             {
                 return;
             }
+            Interlocked.Exchange(ref _countdownEnds, 0);
+            _autoStartAttempted = false;
             if (value == LiveSplitMode.Off)
             {
                 lock (_statusGate)
@@ -106,6 +112,35 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
 
     /// <summary>True once the LiveSplit named pipe is open.</summary>
     public bool IsConnected => _pipe?.IsConnected == true;
+
+    /// <summary>Player count that arms the pre-start countdown; 0 disables auto-start.</summary>
+    public int StartAtPlayers
+    {
+        get => Volatile.Read(ref _startAtPlayers);
+        set
+        {
+            Volatile.Write(ref _startAtPlayers, Math.Clamp(value, 0, 12));
+            Interlocked.Exchange(ref _countdownEnds, 0);
+            _autoStartAttempted = false;
+        }
+    }
+
+    public bool IsCountingDown =>
+        Interlocked.Read(ref _countdownEnds) > _clock.ElapsedMilliseconds;
+
+    public int CountdownSecondsRemaining
+    {
+        get
+        {
+            long ends = Interlocked.Read(ref _countdownEnds);
+            long remaining = ends - _clock.ElapsedMilliseconds;
+            return remaining <= 0 ? 0 : (int)Math.Ceiling(remaining / 1000.0);
+        }
+    }
+
+    /// <summary>Latest connected-player count from the recording loop.</summary>
+    public void ObservePlayers(int players) =>
+        Volatile.Write(ref _playerCount, Math.Max(0, players));
 
     /// <summary>Send the final split when the endgame-room teleport is detected.</summary>
     public bool FinishOnEndgameTeleport
@@ -274,7 +309,148 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
         }
 
 
+        await UpdateAutoStartAsync(cancellationToken).ConfigureAwait(false);
+
         UpdateStatus();
+    }
+
+    private async Task UpdateAutoStartAsync(CancellationToken cancellationToken)
+    {
+        int threshold = Volatile.Read(ref _startAtPlayers);
+        if (threshold <= 0 || Mode == LiveSplitMode.Off)
+        {
+            CancelCountdown();
+            _autoStartAttempted = false;
+            return;
+        }
+
+        int players = Volatile.Read(ref _playerCount);
+        if (players < threshold)
+        {
+            CancelCountdown("auto-start canceled: below player threshold");
+            _autoStartAttempted = false;
+            return;
+        }
+        if (_pipe is null)
+        {
+            CancelCountdown();
+            return;
+        }
+        if (_phase != "NotRunning")
+        {
+            CancelCountdown();
+            _autoStartAttempted = true;
+            return;
+        }
+        if (_autoStartAttempted)
+        {
+            return;
+        }
+        if (Interlocked.Read(ref _countdownEnds) == 0)
+        {
+            LiveSplitRoute? route = LiveSplitRoute.TryLoad();
+            if (route is not null)
+            {
+                _route = route;
+            }
+            TimeSpan offset = _route?.Offset ?? TimeSpan.Zero;
+            if (offset != TimeSpan.Zero)
+            {
+                _autoStartAttempted = true;
+                if (Mode == LiveSplitMode.LogOnly)
+                {
+                    Log($"would start LiveSplit after {players} players (run offset {offset})");
+                    return;
+                }
+                Log($"auto-start: run offset {offset}; starting immediately ({players} players)");
+                bool offsetStarted = await SendStartAsync(cancellationToken).ConfigureAwait(false);
+                if (!offsetStarted)
+                {
+                    Log("auto-start was sent but LiveSplit is not running; not resending");
+                }
+                return;
+            }
+        }
+
+
+        long ends = Interlocked.Read(ref _countdownEnds);
+        if (ends == 0)
+        {
+            Interlocked.Exchange(ref _countdownEnds, _clock.ElapsedMilliseconds + 10000);
+            Log($"auto-start: {players} players reached; starting in 10s");
+            return;
+        }
+        if (_clock.ElapsedMilliseconds < ends)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref _countdownEnds, 0);
+        _autoStartAttempted = true;
+        LiveSplitSnapshot snapshot = await ReadStateAsync(cancellationToken).ConfigureAwait(false);
+        ApplySnapshot(snapshot);
+        if (snapshot.Phase != "NotRunning")
+        {
+            Log($"auto-start canceled: timer {snapshot.Phase}");
+            return;
+        }
+        if (Volatile.Read(ref _playerCount) < threshold)
+        {
+            _autoStartAttempted = false;
+            Log("auto-start canceled: player count dropped");
+            return;
+        }
+        if (Mode == LiveSplitMode.LogOnly)
+        {
+            Log($"would start LiveSplit after {players} players");
+            return;
+        }
+
+        bool started = await SendStartAsync(cancellationToken).ConfigureAwait(false);
+        if (!started)
+        {
+            Log("auto-start was sent but LiveSplit is not running; not resending");
+        }
+    }
+
+    private async Task<bool> SendStartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _pipe!.SendAsync("start", cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log($"could not write auto-start ({ex.Message}); outcome unknown — not resending");
+            throw;
+        }
+
+        LiveSplitSnapshot after;
+        try
+        {
+            after = await ReadStateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log($"auto-start sent but not confirmed ({ex.Message}); outcome unknown — not resending");
+            throw;
+        }
+
+        bool started = after.Phase == "Running";
+        if (started)
+        {
+            Log($"auto-start: started attempt {after.Attempt} after {Volatile.Read(ref _playerCount)} players");
+        }
+        ApplySnapshot(after);
+        return started;
+    }
+
+    private void CancelCountdown(string? reason = null)
+    {
+        if (Interlocked.Exchange(ref _countdownEnds, 0) != 0 && reason is not null)
+        {
+            Log(reason);
+        }
     }
 
     private async Task<LiveSplitSnapshot> ReadStateAsync(CancellationToken cancellationToken)
@@ -294,9 +470,14 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
     private void ApplySnapshot(LiveSplitSnapshot snapshot)
     {
         int previousIndex = _splitIndex;
+        string previousPhase = _phase;
         _phase = snapshot.Phase;
         _segment = snapshot.Segment;
         _splitIndex = snapshot.SplitIndex;
+        if (snapshot.Phase == "NotRunning" && previousPhase != "NotRunning")
+        {
+            _autoStartAttempted = false;
+        }
         if (previousIndex >= 0 && snapshot.SplitIndex > previousIndex + 1 &&
             snapshot.Phase is "Running" or "Paused")
         {
@@ -828,6 +1009,7 @@ internal sealed class LiveSplitAutosplit : IAsyncDisposable
         var pipe = Interlocked.Exchange(ref _pipe, null);
         pipe?.Dispose();
         _armed = false;
+        Interlocked.Exchange(ref _countdownEnds, 0);
         _pendingEndgame = null;
     }
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Diagnostics;
 using System.Xml.Linq;
 using Replay.Format;
@@ -18,12 +19,15 @@ internal sealed class LiveSplitRoute
     public IReadOnlyList<string> Segments { get; }
     public string SourcePath { get; }
     public string? AutoSplitter { get; }
+    public TimeSpan Offset { get; }
 
-    private LiveSplitRoute(IReadOnlyList<string> segments, string sourcePath, string? autoSplitter)
+    private LiveSplitRoute(IReadOnlyList<string> segments, string sourcePath,
+        string? autoSplitter, TimeSpan offset)
     {
         Segments = segments;
         SourcePath = sourcePath;
         AutoSplitter = autoSplitter;
+        Offset = offset;
     }
 
     public static LiveSplitRoute? TryLoad()
@@ -35,9 +39,11 @@ internal sealed class LiveSplitRoute
             IReadOnlyList<string> segments = splitsPath is null ? [] : ReadSegments(splitsPath);
             string? autoSplitter = (splitsPath is null ? null : ReadAutoSplitterFromSplits(splitsPath))
                 ?? (layoutPath is null ? null : ReadAutoSplitterFromLayout(layoutPath));
+            TimeSpan offset = splitsPath is null ? TimeSpan.Zero : ReadOffset(splitsPath);
             if (segments.Count > 0 || autoSplitter is not null)
             {
-                return new LiveSplitRoute(segments, splitsPath ?? layoutPath ?? settingsPath, autoSplitter);
+                return new LiveSplitRoute(segments, splitsPath ?? layoutPath ?? settingsPath,
+                    autoSplitter, offset);
             }
         }
         return null;
@@ -162,6 +168,22 @@ internal sealed class LiveSplitRoute
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException)
         {
             return [];
+        }
+    }
+
+    private static TimeSpan ReadOffset(string splitsPath)
+    {
+        try
+        {
+            var document = XDocument.Load(splitsPath);
+            string? value = document.Root?.Element("Offset")?.Value.Trim();
+            return TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out TimeSpan offset)
+                ? offset
+                : TimeSpan.Zero;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException)
+        {
+            return TimeSpan.Zero;
         }
     }
 
