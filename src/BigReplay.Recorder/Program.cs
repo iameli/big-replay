@@ -156,7 +156,7 @@ internal static class Program
         }
         rate = Math.Clamp(rate, 1, 60);
 
-        outPath ??= $"bigreplay-{DateTime.UtcNow:yyyyMMdd-HHmmss}.replay.json.gz";
+        outPath ??= $"bigreplay-{DateTime.UtcNow:yyyyMMdd-HHmmss}{ReplayFile.Extension}";
 
         using var game = GameProcess.Attach();
         Console.WriteLine($"attached: GameAssembly.dll base=0x{game.GameAssemblyBase:X}");

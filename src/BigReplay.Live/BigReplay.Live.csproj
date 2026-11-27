@@ -13,6 +13,7 @@
     <EmbeddedResource Include="..\..\index.html" LogicalName="viewer/index.html" />
     <EmbeddedResource Include="..\..\atproto.js" LogicalName="viewer/atproto.js" />
     <EmbeddedResource Include="..\..\atproto-record.js" LogicalName="viewer/atproto-record.js" />
+    <EmbeddedResource Include="..\..\replay-file.js" LogicalName="viewer/replay-file.js" />
     <EmbeddedResource Include="..\..\replay-players.js" LogicalName="viewer/replay-players.js" />
     <EmbeddedResource Include="..\..\source-video-sync.js" LogicalName="viewer/source-video-sync.js" />
     <EmbeddedResource Include="..\..\playback-layout.js" LogicalName="viewer/playback-layout.js" />

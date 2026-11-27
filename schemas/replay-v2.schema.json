@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/iameli/big-replay/next/schemas/replay-v2.schema.json",
+  "title": "Big Replay v2 JSON Lines record",
+  "$comment": "Validate each complete line. Header ordering, index/object alternation, increasing indices, bounds and initialization of new slots are stream invariants; see docs/format.md.",
+  "type": "object",
+  "minProperties": 1,
+  "maxProperties": 1,
+  "additionalProperties": false,
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": ["formatVersion", "gameVersion", "unityVersion", "recordedAt", "sampleIntervalSec", "landmarks"],
+      "properties": {
+        "formatVersion": { "const": 2 },
+        "gameVersion": { "type": "string" },
+        "unityVersion": { "type": "string" },
+        "recordedAt": { "type": "string" },
+        "sampleIntervalSec": { "type": "number", "exclusiveMinimum": 0 },
+        "landmarks": { "type": "array", "items": { "$ref": "#/$defs/landmark" } }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "required": ["time"],
+      "additionalProperties": false,
+      "properties": {
+        "time": { "type": "number" },
+        "players": { "$ref": "#/$defs/patch", "items": { "if": { "type": "object" }, "then": { "required": ["netId"], "properties": { "netId": { "type": "integer" } } } } },
+        "gourds": { "$ref": "#/$defs/patch", "items": { "if": { "type": "object" }, "then": { "required": ["name"], "properties": { "name": { "type": "integer" } } } } },
+        "monuments": { "$ref": "#/$defs/patch", "items": { "if": { "type": "object" }, "then": { "required": ["homeName"], "properties": { "homeName": { "type": "integer" } } } } }
+      }
+    },
+    "event": { "$ref": "replay-v1.schema.json#/$defs/event" }
+  },
+  "$defs": {
+    "patch": {
+      "type": "array",
+      "minItems": 1,
+      "prefixItems": [{ "$ref": "#/$defs/slot" }],
+      "items": { "anyOf": [{ "$ref": "#/$defs/slot" }, { "type": "object" }] }
+    },
+    "slot": { "type": "integer", "minimum": 0 },
+    "landmark": { "type": "object", "required": ["id", "label"], "properties": { "id": { "type": "string" }, "label": { "type": "string" } } }
+  }
+}

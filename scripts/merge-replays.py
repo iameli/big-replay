@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge two BigReplay v1 replays (two segments of the same run) into one.
+"""Merge two Big Replay recordings (v1 or v2 segments of the same run) into one.
 
 Splices the second segment directly after the first on the recording
 timeline and rebases the whole thing to t=0. Handles the crash artifact
@@ -12,41 +12,106 @@ Usage:
 """
 import gzip
 import json
+import math
 import sys
 
 
-def load(path):
-    """Decompress (tolerating truncation) and parse a replay, repairing the
-    old writer's "," -before-"]" crash artifact."""
-    with gzip.open(path, "rb") as f:
-        raw = f.read()
-    text = raw.decode("utf-8", errors="replace")
+from replay_sparse import COLLECTIONS, apply_patch, frame_delta
+
+
+def reject_constant(value):
+    raise ValueError(f"invalid JSON constant: {value}")
+
+
+def valid_time(payload):
+    return (isinstance(payload, dict) and type(payload.get("time")) in (int, float)
+            and math.isfinite(payload["time"]))
+
+
+def load_lines(header, stream):
+    frames, events = [], []
+    previous = {key: [] for key in COLLECTIONS}
     repaired = False
-    if '},],"events"' in text:  # WriteFrame died after "," but before the frame
-        text = text.replace('},],"events"', '}],"events"')
-        repaired = True
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as e:
-        # truncation: keep the longest complete prefix up to the last closing }
-        cut = text.rfind("\n")
-        while cut > 0:
-            try:
-                data = json.loads(text[:cut])
-                repaired = True
-                break
-            except json.JSONDecodeError:
-                cut = text.rfind("\n", 0, cut)
+    for number, line in enumerate(stream, 2):
+        if not line.endswith(b"\n"):
+            repaired = True
+            break
+        record = json.loads(line.decode("utf-8"), parse_constant=reject_constant)
+        if isinstance(record, dict) and record.keys() == {"event"}:
+            event = record["event"]
+            if (not valid_time(event) or not isinstance(event.get("type"), str)
+                    or (event.get("detail") is not None and not isinstance(event["detail"], str))):
+                raise ValueError(f"invalid event on line {number}")
+            events.append(event)
+        elif isinstance(record, dict) and record.keys() == {"frame"}:
+            delta = record["frame"]
+            if not valid_time(delta) or delta.keys() - {"time", *COLLECTIONS}:
+                raise ValueError(f"invalid frame on line {number}")
+            frame = {"time": delta["time"]}
+            for key, identity in COLLECTIONS.items():
+                frame[key] = apply_patch(previous[key], delta[key], identity) if key in delta else previous[key]
+            frames.append(frame)
+            previous = frame
         else:
-            raise
+            raise ValueError(f"unknown record on line {number}")
+    return {"header": header, "frames": frames, "events": events}, repaired
+
+
+def load(path):
+    """Read either encoding by content, including plain stranded v2 .partial files."""
+    with open(path, "rb") as file:
+        compressed = file.peek(2)[:2] == b"\x1f\x8b"
+        with gzip.GzipFile(fileobj=file) if compressed else file as stream:
+            first = stream.readline()
+            try:
+                record = json.loads(first)
+            except ValueError:
+                record = None  # pretty-printed v1 document or old-writer crash artifact
+            if isinstance(record, dict) and record.keys() == {"header"}:
+                if record["header"].get("formatVersion") != 2 or not first.endswith(b"\n"):
+                    raise ValueError("invalid JSON Lines header")
+                return load_lines(record["header"], stream)
+            if record is not None and not first.endswith(b"\n"):
+                data, repaired = record, False  # compact v1: already parsed the entire file
+            else:
+                text = (first + stream.read()).decode("utf-8")
+                repaired = '},],"events"' in text  # old writer died between delimiter and frame
+                if repaired:
+                    text = text.replace('},],"events"', '}],"events"')
+                data = json.loads(text)
+    if data["header"]["formatVersion"] != 1:
+        raise ValueError("unsupported replay document version")
     data.setdefault("frames", [])
     data.setdefault("events", [])
     return data, repaired
 
 
+def sparse_records(header, frames, events):
+    yield {"header": dict(header, formatVersion=2)}
+    previous = {key: [] for key in COLLECTIONS}
+    events = iter(events)
+    event = next(events, None)
+    for frame in frames:
+        while event is not None and event["time"] <= frame["time"]:
+            yield {"event": event}
+            event = next(events, None)
+        yield {"frame": frame_delta(previous, frame)}
+        previous = frame
+    if event is not None:
+        yield {"event": event}
+    for event in events:
+        yield {"event": event}
+
+
 def write(out_path, header, frames, events):
-    with gzip.open(out_path, "wt", encoding="utf-8", compresslevel=6) as f:
-        json.dump({"header": header, "frames": frames, "events": events}, f, separators=(",", ":"), ensure_ascii=False)
+    opener = gzip.open if out_path.endswith(".gz") else open
+    with opener(out_path, "xt", encoding="utf-8", newline="\n") as f:
+        if out_path.removesuffix(".gz").endswith(".jsonl"):
+            for record in sparse_records(header, frames, events):
+                f.write(json.dumps(record, separators=(",", ":"), ensure_ascii=False) + "\n")
+        else:  # Preserve the historical v1 output for .json[.gz] callers.
+            json.dump({"header": dict(header, formatVersion=1), "frames": frames, "events": events},
+                      f, separators=(",", ":"), ensure_ascii=False)
 
 
 def main():
@@ -54,18 +119,20 @@ def main():
     a, rep1 = load(in1)
     b, rep2 = load(in2)
     h1, h2 = a["header"], b["header"]
-    for k in ("formatVersion", "gameVersion", "unityVersion", "sampleIntervalSec"):
+    for k in ("gameVersion", "unityVersion", "sampleIntervalSec"):
         if h1.get(k) != h2.get(k):
             sys.exit(f"segment mismatch on {k}: {h1.get(k)!r} vs {h2.get(k)!r} — not the same run/build")
     if h1["recordedAt"] > h2["recordedAt"]:
         sys.exit("segments appear in the wrong order (first file attached later)")
 
     fa, fb = a["frames"], b["frames"]
+    if not fa or not fb:
+        sys.exit("both segments must contain at least one complete frame")
     interval = h1["sampleIntervalSec"]
 
     # timeline: rebase file1 to 0, splice file2 right after file1's last frame
     shift_a = -fa[0]["time"]
-    seam = fa[-1]["time"] + interval
+    seam = fa[-1]["time"] + shift_a + interval
     shift_b = seam - fb[0]["time"]
 
     frames = []
@@ -95,6 +162,7 @@ def main():
     events.append({"time": seam, "type": "recorder-resumed",
                    "detail": "recording restarted mid-run; segments spliced"})
     events.sort(key=lambda e: e["time"])
+    write(out, h1, frames, events)
 
     import datetime as _dt
     t1 = _dt.datetime.fromisoformat(h1["recordedAt"].replace("Z", "+00:00"))
@@ -112,9 +180,9 @@ def main():
         print(f"[note] untracked wall time between segments ~= {untracked:.0f}s"
               f" (file2 attachment minus file1 recorded span)")
     if rep1:
-        print("[note] in1 repaired stray comma (old-writer crash artifact)")
+        print("[note] in1 recovered an incomplete recording")
     if rep2:
-        print("[note] in2 repaired stray comma")
+        print("[note] in2 recovered an incomplete recording")
 
 
 if __name__ == "__main__":

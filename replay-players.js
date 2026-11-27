@@ -17,6 +17,33 @@ function canonicalPlayerOrder(playerIds, labelPlayer) {
   });
 }
 
+// Frame arrays and individual snapshots can be shared by the storage decoder.
+// Project only changed entries, preserving that sharing instead of editing history.
+function normalizeSnapshots(frames, collection, project) {
+  let previous, normalized;
+  const replacements = new WeakMap();
+  for (const frame of frames) {
+    const source = frame[collection];
+    if (!source) continue;
+    if (source !== previous) {
+      let copy = null;
+      for (let i = 0; i < source.length; i++) {
+        const item = source[i];
+        let value = replacements.get(item);
+        if (value === undefined) {
+          value = project(item);
+          if (value !== item) replacements.set(item, value);
+        }
+        if (value !== item && !copy) copy = source.slice(0, i);
+        if (copy && value !== null) copy.push(value);
+      }
+      previous = source;
+      normalized = copy || source;
+    }
+    frame[collection] = normalized;
+  }
+}
+
 // Turns recorded netIds into viewer player identities, in place, before anything
 // keys on netId (colors, trails, nicknames, shared records).
 // - netId 0 is a spawning placeholder: Mirror never assigns it to a real player,
@@ -26,9 +53,10 @@ function canonicalPlayerOrder(playerIds, labelPlayer) {
 //   rewritten to the first one. Returns Map(canonical netId → all merged netIds).
 function normalizeReplayPlayers(replay) {
   const frames = replay.frames, spans = new Map();
+  let hasPlaceholders = false;
   frames.forEach((frame, index) => {
-    frame.players = frame.players.filter(player => player.netId !== 0);
     for (const player of frame.players) {
+      if (player.netId === 0) { hasPlaceholders = true; continue; }
       let span = spans.get(player.netId);
       if (!span) spans.set(player.netId, span = { netId: player.netId, first: index, last: index, name: "" });
       span.last = index;
@@ -57,11 +85,18 @@ function normalizeReplayPlayers(replay) {
   for (const [netId, ids] of aliases) if (ids.length < 2) aliases.delete(netId);
 
   const remap = netId => canonical.get(netId) ?? netId;
+  if (hasPlaceholders || canonical.size) {
+    normalizeSnapshots(frames, "players", player => {
+      if (player.netId === 0) return null;
+      const netId = remap(player.netId);
+      return netId === player.netId ? player : { ...player, netId };
+    });
+  }
   if (canonical.size) {
-    for (const frame of frames) {
-      for (const player of frame.players) player.netId = remap(player.netId);
-      for (const gourd of frame.gourds || []) if (gourd.holderNetId) gourd.holderNetId = remap(gourd.holderNetId);
-    }
+    normalizeSnapshots(frames, "gourds", gourd => {
+      const holderNetId = remap(gourd.holderNetId);
+      return holderNetId === gourd.holderNetId ? gourd : { ...gourd, holderNetId };
+    });
   }
   if (Array.isArray(replay.events)) {
     replay.events = replay.events.filter(ev =>

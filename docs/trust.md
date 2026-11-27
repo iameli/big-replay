@@ -36,9 +36,8 @@ WebSocket so people can watch a walk as it happens:
 - The same port serves the viewer itself (`http://127.0.0.1:8787/`) — static files
   bundled into the app, no data, no telemetry, no outbound requests of its own.
 - What leaves is only replay data you already have on disk: player positions, gourd
-  and monument state, names as recorded. It is the same JSON a `.replay.json.gz`
-  holds, sent as plain lines (no compression, no encryption — treat it like the
-  recording itself).
+  and monument state, names as recorded. Full frames travel as plain JSON lines
+  (no compression, no encryption — treat the stream like the recording itself).
 - A viewer elsewhere on your LAN must be opted in with `--live-bind` (for example
   `--live-bind 0.0.0.0`); that will prompt Windows Firewall and lets anyone who can
   reach the port watch. `--no-live` turns the server off entirely.

@@ -3,12 +3,14 @@ namespace Replay.Format;
 /// <summary>Replay file format version. Bump on breaking schema changes; keep the viewer in sync.</summary>
 public static class ReplayFile
 {
-    public const int Version = 1;
+    public const int Version = 2;
+    public const string Extension = ".replay.jsonl";
 }
 
-public sealed class ReplayHeader
+public sealed record ReplayHeader
 {
-    public int FormatVersion { get; init; } = ReplayFile.Version;
+    // The logical header is still v1 on the live socket. ReplayWriter stamps its storage version.
+    public int FormatVersion { get; init; } = 1;
     public required string GameVersion { get; init; }
     public required string UnityVersion { get; init; }
     public required DateTime RecordedAt { get; init; }

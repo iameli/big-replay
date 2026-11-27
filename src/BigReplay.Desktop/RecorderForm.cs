@@ -616,7 +616,7 @@ internal sealed class RecorderForm : Form
                     using (game)
                     {
                         string path = Path.Combine(_outputDirectory,
-                            $"bigreplay-{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid().ToString("N")[..8]}.replay.json.gz");
+                            $"bigreplay-{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid().ToString("N")[..8]}{ReplayFile.Extension}");
                         _currentFileName = Path.GetFileName(path);
                         _saveLine.Text = $"Current: {_currentFileName}";
                         _recordingActive = true;

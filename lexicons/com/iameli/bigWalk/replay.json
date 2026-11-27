@@ -19,7 +19,7 @@
           "format": {
             "type": "string",
             "description": "Encoding of the replay blob.",
-            "knownValues": ["com.iameli.bigWalk.replay#jsonGzV1"]
+            "knownValues": ["com.iameli.bigWalk.replay#jsonGzV1", "com.iameli.bigWalk.replay#jsonlGzV2"]
           },
           "title": { "type": "string", "maxLength": 1000, "maxGraphemes": 100 },
           "description": { "type": "string", "maxLength": 10000, "maxGraphemes": 1000 },
@@ -83,6 +83,10 @@
     "jsonGzV1": {
       "type": "token",
       "description": "Gzip-compressed JSON matching schemas/replay-v1.schema.json (formatVersion 1)."
+    },
+    "jsonlGzV2": {
+      "type": "token",
+      "description": "Gzip-compressed sparse JSON Lines (formatVersion 2), as specified in docs/format.md."
     }
   }
 }

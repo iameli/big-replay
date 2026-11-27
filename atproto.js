@@ -4,6 +4,7 @@
 // and the OAuth-backed account used to publish replays. Reads need no sign-in.
 const REPLAY_COLLECTION = "com.iameli.bigWalk.replay";
 const REPLAY_FORMAT_JSON_GZ_V1 = "com.iameli.bigWalk.replay#jsonGzV1";
+const REPLAY_FORMAT_JSONL_GZ_V2 = "com.iameli.bigWalk.replay#jsonlGzV2";
 const STREAMPLACE_VIDEO_COLLECTION = "place.stream.video";
 const OAUTH_SCOPE = `atproto repo:${REPLAY_COLLECTION} blob:*/*`;
 const PLC_DIRECTORY = "https://plc.directory";
@@ -80,13 +81,19 @@ function rkeyFromUri(uri) {
 }
 
 // ---------- records ----------
+function sharedReplayVersion(format) {
+  if (format === REPLAY_FORMAT_JSON_GZ_V1) return 1;
+  if (format === REPLAY_FORMAT_JSONL_GZ_V2) return 2;
+  throw new Error("This replay uses a format this viewer does not understand yet.");
+}
+
 // atproto records cannot hold floats: durations are integer milliseconds, and
 // all positions stay inside the replay blob.
 function buildReplayRecord({ blob, title, description, video, videoStartMs, header, players, stats, durationMs, createdAt }) {
   const record = {
     $type: REPLAY_COLLECTION,
     replay: blob,
-    format: REPLAY_FORMAT_JSON_GZ_V1,
+    format: header?.formatVersion === 2 ? REPLAY_FORMAT_JSONL_GZ_V2 : REPLAY_FORMAT_JSON_GZ_V1,
     createdAt,
   };
   if (title) record.title = title;

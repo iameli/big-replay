@@ -165,7 +165,7 @@ Start Modded → crash at generation; restore the folder → boots.
 - `.github/workflows/release.yml` — release + CI packaging + Pages deploy.
 - `installer/thunderstore/{README,CHANGELOG}.md` — the Thunderstore listing content.
 - `docs/trust.md` — the read-only/no-injection trust story (keep it accurate).
-- `docs/format.md`, `schemas/replay-v1.schema.json` — replay format contract.
+- `docs/format.md`, `schemas/replay-{v1,v2}.schema.json` — replay format contract.
 
 ## 8. Big Walk 1.6.0 repin (2026-10-05) — and a crash-model correction
 

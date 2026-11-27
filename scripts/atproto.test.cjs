@@ -5,7 +5,7 @@ const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
 const atproto = runInNewContext(
   readFileSync(join(__dirname, '../atproto.js'), 'utf8') +
-  '\n({ parseRoute, parseHashRoute, replayPath, buildReplayRecord, streamplaceVideoUri, recordNicknames, recordPlayerCount, withNickname, rkeyFromUri, REPLAY_COLLECTION })',
+  '\n({ parseRoute, parseHashRoute, replayPath, buildReplayRecord, sharedReplayVersion, streamplaceVideoUri, recordNicknames, recordPlayerCount, withNickname, rkeyFromUri, REPLAY_COLLECTION })',
   { EventTarget, URLSearchParams });
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -61,6 +61,15 @@ test('records hold integer durations, normalized datetimes, and players without 
     players: [{ netId: 579, name: 'Rando' }, { netId: 0 }],
     stats: { maxPlayers: 12, gourdsPlaced: 45, towersCompleted: 9, deaths: 3 },
   });
+});
+
+test('shared records identify the actual encoding and reject unknown tokens', () => {
+  for (const [version, suffix] of [[1, 'jsonGzV1'], [2, 'jsonlGzV2']]) {
+    const { format } = atproto.buildReplayRecord({ header: { formatVersion: version }, players: [] });
+    assert.equal(format, `com.iameli.bigWalk.replay#${suffix}`);
+    assert.equal(atproto.sharedReplayVersion(format), version);
+  }
+  assert.throws(() => atproto.sharedReplayVersion('jsonl'), /format/);
 });
 
 test('Streamplace video references reject other collections and malformed AT URIs', () => {

@@ -6,5 +6,9 @@ dist/
 out/
 *.replay.json
 *.replay.json.gz
+*.replay.jsonl
+*.replay.jsonl.gz
+*.replay.*.partial
 !/sample.replay.json.gz
 node_modules/
+__pycache__/

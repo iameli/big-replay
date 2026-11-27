@@ -9,7 +9,7 @@ Big Replay is a tool for recording character positions in Big Walk and playing t
 - `src/BigReplay.Recorder/` — CLI + shared capture loop: sample at N Hz, write replay file.
 - `src/BigReplay.Desktop/` — native Windows GUI: watch for the game and record automatically.
 - `src/BigWalk.ReplayLauncher/` — BepInEx plugin for modded launches: starts the desktop app and lets it exit with the game (the Thunderstore payload).
-- `schemas/` — JSON Schema for replay files (the contract the web front-end validates against).
+- `schemas/` — JSON Schemas for legacy replay documents and sparse replay records.
 - `index.html`, `map-view.js`, `gourd-receptacles.js`, `bigmap.jpeg`, `satellite.jpeg` — root-level replay viewer and map assets.
 - `atproto.js`, `oauth-client-metadata.json`, `vendor/` — Atmosphere sign-in and replay sharing for the viewer.
 - `lexicons/` — atproto lexicons (`com.iameli.bigWalk.*`) for shared replays.
@@ -80,11 +80,11 @@ The portable ZIP does not register Windows startup automatically.
   Fix the problem and click **Resume recording**. Game startup/access failures retry
   automatically. Only one desktop instance runs per Windows login.
 
-Captures use `.replay.json.gz.partial` while recording and become `.replay.json.gz`
-only after successful finalization. Do not open the active file in the viewer.
-Sessions with no player samples leave no replay. On a capture/save error, any partial
-file is retained for investigation; it may not be playable. Forced termination,
-Windows shutdown, or power loss can also leave an unfinished file.
+Captures use `.replay.jsonl.partial` while recording and become `.replay.jsonl`
+on finalization. Each sample appends only changed items; stationary items remain
+present in playback. After a crash, open a **copy** of the stranded partial in
+the viewer. It can play every complete frame through the last newline, without a
+footer or repair pass. Sessions with no player samples normally leave no replay.
 
 **Split boundary:** the first zero-player sample after players have been recorded.
 There is no grace period: even a brief observed drop to zero splits the file. The
@@ -181,12 +181,38 @@ manifest must match the installed game build; see [the trust notes](docs/trust.m
 The CLI remains available:
 
 ```powershell
-dotnet run --project src/BigReplay.Recorder -- record manifest.json --out my-walk.replay.json.gz
+dotnet run --project src/BigReplay.Recorder -- record manifest.json --out my-walk.replay.jsonl
 ```
 
 Ctrl+C, game process exit, or a recorded walk dropping to zero players finishes the
 CLI's single output file. Use the desktop app to keep watching and automatically
 record subsequent walks. Existing output files are never overwritten.
+Use `--out my-walk.replay.jsonl.gz` to request gzip during capture. Prefer plain
+JSON Lines for crash recovery: a damaged gzip stream may not decompress. Old
+`.replay.json.gz` recordings still open; no conversion is required.
+
+### Convert existing recordings without replacing them
+
+From a checkout with Python 3.10+ (no packages to install), run this in PowerShell:
+
+```powershell
+$walks = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'BigReplay'
+py -3 scripts/convert-replays.py "$walks"
+```
+
+This recursively finds finished `.replay.json` and `.replay.json.gz` recordings
+(including recorder collision suffixes) and writes sibling `.jsonl.gz` files.
+Add `--plain` for uncompressed JSON Lines, or pass individual `.json[.gz]` paths
+to convert files with custom names. `.partial` files are never batch inputs.
+
+Every output is read back and its reconstructed header, ordered frames and
+ordered events are compared with the original **before** it gets its final
+name. The format version and container change, not the replay data: numeric
+precision and signed zero, duplicate item IDs, and optional fields are preserved.
+The converter streams one recording at a time. It does not repair corrupt
+inputs, drop unsupported fields, delete originals, or overwrite a destination.
+On rerun it verifies an existing copy instead. Any mismatch or read/write
+failure is reported and makes the batch exit nonzero; other files still run.
 
 ### Automated releases
 
@@ -236,7 +262,7 @@ opaque background only for the Apple touch icon and installer sidebar.
 ## Replay map
 
 Open the **[live Big Replay viewer](https://big-replay.iame.li/)** in a current
-Chromium browser and choose or drop a `.replay.json.gz` / `.json` recording.
+Chromium browser and choose or drop a `.replay.jsonl` recording (gzip and legacy v1 files also work).
 Chosen files are read locally in your browser and are only uploaded if you sign in
 and choose **Share** (see [Sharing replays](#sharing-replays)).
 [Try the bundled sample](https://big-replay.iame.li/?replay=sample.replay.json.gz).
@@ -252,7 +278,7 @@ remain unchanged.
 
 For offline use, open the root `index.html` from a checkout. Keep
 `atproto-record.js`, `source-video-sync.js`, `playback-layout.js`,
-`mosaic-video.js`, `live-client.js`, `map-view.js`, `gourd-receptacles.js`,
+`mosaic-video.js`, `replay-file.js`, `replay-players.js`, `live-client.js`, `map-view.js`, `gourd-receptacles.js`,
 `bigmap.jpeg`, and `satellite.jpeg` beside it. No build or package install is needed.
 Alternatively, serve the repository root with a static HTTP server and
 open `/?replay=run1.replay.json.gz`.
@@ -427,7 +453,7 @@ watching: the stream carries every recorded player name and position.
 Connecting opens the run at its **live point** and keeps following it from there:
 
 - The recorder sends the whole run so far on connect, then each new sample as it is
-  taken — the same header, frames and events a finished `.replay.json.gz` holds,
+  taken — the same logical frames and events as the file, but with full snapshots,
   one JSON object per line over a WebSocket. The viewer uses that backlog to fill in
   history, but starts at the newest frame rather than replaying everything missed.
 - Rewinding works as usual: scrub back, use 2×–8× to catch up, or click **Go live**

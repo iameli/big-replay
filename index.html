@@ -187,8 +187,8 @@
 </head>
 <body>
 <div id="drop">
-  <div class="big">Drop a <b>.replay.json.gz</b> file here</div>
-  <label class="btn">choose file<input type="file" accept=".gz,.json" hidden></label>
+  <div class="big">Drop a <b>.replay.jsonl</b> file here</div>
+  <label class="btn">choose file<input type="file" accept=".jsonl,.gz,.json,.partial" hidden></label>
   <p id="drop-status" role="status" hidden></p>
   <section id="replay-list" aria-labelledby="replay-list-title" hidden>
     <h2 id="replay-list-title"></h2>
@@ -474,6 +474,7 @@
 </dialog>
 
 <script src="atproto.js"></script>
+<script src="replay-file.js"></script>
 <script src="replay-players.js"></script>
 <script src="atproto-record.js"></script>
 <script src="source-video-sync.js"></script>
@@ -1011,47 +1012,33 @@ document.getElementById("drop").addEventListener("drop", e => {
 });
 
 async function loadFile(file) {
-  const buf = await file.arrayBuffer();
-  await parseBuffer(buf, file.name);
+  try {
+    await parseBuffer(await file.arrayBuffer());
+  } catch (error) {
+    setStatus(dropStatus, `Could not open ${file.name}: ${error.message}`, true);
+  }
 }
 
-async function parseBuffer(buf, name, sharedReplay = null) {
-  let text;
-  const head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
-  const gzipped = name.endsWith(".gz") || (head[0] === 0x1f && head[1] === 0x8b);
-  if (gzipped) {
-    const ds = new DecompressionStream("gzip");
-    const stream = new Blob([buf]).stream().pipeThrough(ds);
-    text = await new Response(stream).text();
-  } else {
-    text = new TextDecoder().decode(buf);
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    alert("could not parse replay file: " + err);
-    return false;
-  }
+async function parseBuffer(buf, sharedReplay = null, expectedVersion = null) {
+  const { replay: parsed, source } = await decodeReplayFile(buf, expectedVersion);
+  if (!parsed.frames.length) throw new Error("No frames in replay");
   const recordedAt = parsed.header?.recordedAt;
   // Normal recordings have a start timestamp. Hash older files without one so
   // their unnamed players still persist without colliding on reused network IDs.
   nicknameRecordingScope = typeof recordedAt === "string" && recordedAt.trim()
     ? `recorded:${recordedAt}`
-    : `sha256:${Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buf)),
+    : `sha256:${Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", source.buf)),
       byte => byte.toString(16).padStart(2, "0")).join("")}`;
-  if (!parsed?.frames?.length) { alert("no frames in replay"); return false; }
-  startReplay(parsed, { buf, gzipped, sharedReplay });
-  return true;
+  startReplay(parsed, { source, sharedReplay });
 }
 
 // Adopts a replay the whole viewer then works with — whether it came from a file, a shared
 // record, or a live stream. Callers set nicknameRecordingScope first.
-function startReplay(parsed, { buf = null, gzipped = false, sharedReplay = null, live = false } = {}) {
+function startReplay(parsed, { source = null, sharedReplay = null, live = false } = {}) {
   liveActive = live;
   playerAliases = normalizeReplayPlayers(parsed);
   replay = parsed;
-  replaySource = live ? null : { buf, gzipped };
+  replaySource = source;
   mosaicVideo.reset();
   setMosaicStartTime(0, false);
   setShared(sharedReplay);
@@ -1085,9 +1072,13 @@ function startReplay(parsed, { buf = null, gzipped = false, sharedReplay = null,
 }
 
 async function loadUrl(url) {
-  const r = await fetch(url);
-  const buf = await r.arrayBuffer();
-  await parseBuffer(buf, url);
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    await parseBuffer(await response.arrayBuffer());
+  } catch (error) {
+    setStatus(dropStatus, `Could not load replay: ${error.message}`, true);
+  }
 }
 
 // ---------- live replay ----------
@@ -1527,8 +1518,10 @@ function replayStats() {
     gourdsPlaced += filled;
     if (filled === group.count) towersCompleted++;
   }
+  let maxPlayers = 0;
+  for (const frame of frames) maxPlayers = Math.max(maxPlayers, frame.players.length);
   return {
-    maxPlayers: Math.max(...frames.map(frame => frame.players.length)),
+    maxPlayers,
     gourdsPlaced,
     towersCompleted,
     deaths: events.filter(ev => ev.type === "death").length,
@@ -1537,11 +1530,6 @@ function replayStats() {
 
 function replayDurationMs() {
   return (frames[frames.length - 1].time - frames[0].time) * 1000;
-}
-
-async function gzipBytes(buf) {
-  const stream = new Blob([buf]).stream().pipeThrough(new CompressionStream("gzip"));
-  return new Response(stream).arrayBuffer();
 }
 
 function openShareDialog() {
@@ -1574,7 +1562,7 @@ async function publishReplay(event) {
     if (video && (!Number.isFinite(videoStartSeconds) || videoStartSeconds < 0)) {
       throw new Error("Mosaic start must be a non-negative replay time in seconds.");
     }
-    const bytes = replaySource.gzipped ? replaySource.buf : await gzipBytes(replaySource.buf);
+    const bytes = await replayUploadBytes(replaySource);
     setStatus(shareFormStatus, `Uploading ${megabytes(bytes.byteLength)}…`);
     const blob = await account.uploadBlob(bytes, "application/gzip");
     setStatus(shareFormStatus, "Publishing…");
@@ -1630,13 +1618,14 @@ async function loadSharedReplay(actor, rkey) {
   try {
     const who = await resolveActor(actor);
     const { cid, value } = await getReplayRecord(who.pds, who.did, rkey);
-    if (value?.format !== REPLAY_FORMAT_JSON_GZ_V1) throw new Error("This replay uses a format this viewer does not understand yet.");
+    const version = sharedReplayVersion(value?.format);
     const blob = blobCid(value.replay);
     if (!blob) throw new Error("The replay record has no file.");
     const buf = await downloadBlob(blobUrl(who.pds, who.did, blob), (loaded, total) =>
       setStatus(dropStatus, `Downloading replay… ${megabytes(loaded)}${total ? ` of ${megabytes(total)}` : ""}`));
     setStatus(dropStatus, "Opening replay…");
-    if (await parseBuffer(buf, "replay.json.gz", { ...who, rkey, cid, record: value })) setStatus(dropStatus, "");
+    await parseBuffer(buf, { ...who, rkey, cid, record: value }, version);
+    setStatus(dropStatus, "");
   } catch (err) {
     setStatus(dropStatus, `Could not load this replay: ${err.message}`, true);
     dropEl.classList.remove("shared-loading");
@@ -1742,7 +1731,8 @@ function updateMeta() {
   const h = replay.header || {};
   document.getElementById("meta").textContent =
     `game ${h.gameVersion || "?"} · unity ${h.unityVersion || "?"} · ` +
-    `${frames.length} frames @ ${(h.sampleIntervalSec || 0.1).toFixed(2)}s`;
+    `${frames.length} frames @ ${(h.sampleIntervalSec || 0.1).toFixed(2)}s` +
+    (replaySource?.recovered ? " · ignored an unfinished final record" : "");
 }
 
 // ---------- projection ----------

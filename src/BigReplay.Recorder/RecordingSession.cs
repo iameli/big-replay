@@ -10,8 +10,8 @@ public readonly record struct RecordingResult(string? Path, long Frames);
 
 /// <summary>
 /// Shared CLI/desktop capture loop. The caller owns the read-only game handle.
-/// A <see cref="LiveSession"/>, when supplied, receives the same header, frames and events the
-/// file does, in the same order and encoding, so a live viewer sees exactly what a recording holds.
+/// The optional live stream receives the same logical samples and events in publication order;
+/// only the capture file uses sparse frames.
 /// </summary>
 public static class RecordingSession
 {
@@ -30,27 +30,31 @@ public static class RecordingSession
             throw new ArgumentException("Rate and duration must be finite.");
         }
         // Never overwrite a previous run (finished or stranded .partial); pick the next free name.
+        string requestedPath = outPath;
+        bool gzip = outPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
+        string extension = gzip ? ReplayFile.Extension + ".gz" : ReplayFile.Extension;
+        if (!outPath.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+        {
+            extension = Path.GetExtension(outPath);
+        }
         string partialPath = outPath + ".partial";
         int suffix = 1;
         while (File.Exists(outPath) || File.Exists(partialPath))
         {
-            string dir = Path.GetDirectoryName(outPath) ?? "";
-            string name = Path.GetFileNameWithoutExtension(outPath);
-            string ext = Path.GetExtension(outPath);
-            outPath = Path.Combine(dir, $"{name}-{suffix}{ext}");
+            int split = requestedPath.Length - extension.Length;
+            outPath = $"{requestedPath[..split]}-{suffix}{requestedPath[split..]}";
             partialPath = outPath + ".partial";
             suffix++;
         }
         using var file = new FileStream(partialPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
-        using var writer = new ReplayWriter(file);
+        using var writer = new ReplayWriter(file, gzip);
         long frames = 0;
         int failedSamples = 0;
-        var events = new List<ReplayEvent>();
         // Every event the file records also goes to the live stream, at the same moment, so a
         // viewer that connected mid-run sees the same history a finished replay would show.
         void AddEvent(ReplayEvent replayEvent)
         {
-            events.Add(replayEvent);
+            writer.WriteEvent(replayEvent);
             live?.PublishEvent(replayEvent);
         }
         string endReason = "stopped";
@@ -77,6 +81,12 @@ public static class RecordingSession
                     continue;
                 }
                 next = t + interval;
+                bool active;
+                List<PlayerSnapshot> players;
+                List<GourdSnapshot> gourds;
+                List<MonumentSnapshot> monuments;
+                List<Landmark> landmarks;
+                int corpses;
                 try
                 {
                     if (reader.Game.HasExited)
@@ -84,19 +94,42 @@ public static class RecordingSession
                         endReason = "game-exited";
                         break;
                     }
-                    bool active = reader.IsServerActive();
-                    var players = reader.ReadPlayers();
-
-
-                if (t - lastStatus >= 1)
-                {
-                    lastStatus = t;
-                    report?.Invoke(new RecordingStatus(t, players.Count, frames));
+                    active = reader.IsServerActive();
+                    players = reader.ReadPlayers();
+                    if (t - lastStatus >= 1)
+                    {
+                        lastStatus = t;
+                        report?.Invoke(new RecordingStatus(t, players.Count, frames));
+                    }
+                    (monuments, landmarks) = reader.ReadHomes();
+                    if (!headerWritten && players.Count == 0)
+                    {
+                        serverWasActive = active;
+                        continue;
+                    }
+                    corpses = reader.ReadCorpseCount();
+                    gourds = reader.ReadGourds();
                 }
+                catch (Exception ex)
+                {
+                    // A failed memory read publishes nothing and does not advance the delta baseline.
+                    // Disk I/O is deliberately outside this catch: never append after a failed write.
+                    failedSamples++;
+                    if (failedSamples <= 3)
+                    {
+                        Console.Error.WriteLine($"  sample failed (skipping): {ex.Message}");
+                    }
+                    if (failedSamples > Math.Max(30, rate * 30))
+                    {
+                        Console.Error.WriteLine("  too many failed samples; stopping.");
+                        endReason = "capture-failed";
+                        break;
+                    }
+                    continue;
+                }
+                failedSamples = 0;
 
-                var (monuments, landmarks) = reader.ReadHomes();
-
-                if (!headerWritten && players.Count > 0)
+                if (!headerWritten)
                 {
                     var header = new ReplayHeader
                     {
@@ -110,12 +143,6 @@ public static class RecordingSession
                     live?.BeginRun(header);
                     headerWritten = true;
                     AddEvent(new ReplayEvent { Time = t, Type = "run-started" });
-                }
-
-                if (!headerWritten)
-                {
-                    serverWasActive = active;
-                    continue;
                 }
 
                 // ---- events from deltas ----
@@ -136,7 +163,6 @@ public static class RecordingSession
                 }
                 prevPlayers = nowIds;
 
-                int corpses = reader.ReadCorpseCount();
                 if (corpses > prevCorpses)
                 {
                     AddEvent(new ReplayEvent { Time = t, Type = "death", Detail = (corpses - prevCorpses).ToString() });
@@ -172,7 +198,6 @@ public static class RecordingSession
                 serverWasActive = active;
 
                 // ---- carried gourd positions: snap stashed gourds to their holder ----
-                var gourds = reader.ReadGourds();
                 var carriedByNetId = new Dictionary<uint, int>();
                 foreach (var g in gourds)
                 {
@@ -230,39 +255,19 @@ public static class RecordingSession
                     endReason = "run-ended";
                     break;
                 }
-                }
-                catch (Exception ex)
-                {
-                    // One bad sample (transient NaN, mid-scene garbage, process blip) must never
-                    // kill a run: log, skip, keep going. Give up only after a sustained failure
-                    // storm (e.g. the game died mid-read) so we don't record garbage.
-                    failedSamples++;
-                    if (failedSamples <= 3)
-                    {
-                        Console.Error.WriteLine($"  sample failed (skipping): {ex.Message}");
-                    }
-                    if (failedSamples > Math.Max(30, rate * 30))
-                    {
-                        Console.Error.WriteLine("  too many failed samples; stopping.");
-                        endReason = "capture-failed";
-                        break;
-                    }
-                }
             }
         }
         finally
         {
-            // Preserve all completed samples even if a later memory read fails.
             if (headerWritten)
             {
-                writer.Finish(events);
                 // The live socket stays open: the viewer shows the finished run and waits for the
                 // next hello, which the desktop app sends when the following walk starts.
                 live?.EndRun(endReason);
             }
         }
+        // Close the stream (and finish optional gzip) before renaming on Windows.
         writer.Dispose();
-        file.Dispose();
         if (!headerWritten)
         {
             File.Delete(partialPath);
